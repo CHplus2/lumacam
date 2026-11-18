@@ -1,16 +1,56 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ImagePlus, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { useAuth } from '../auth'
 import { ErrorBox, Spinner } from '../components/ui'
-import { CONTACT_METHODS } from '../utils'
+import { CATEGORY_COLORS, CONTACT_METHODS, ICONS } from '../utils'
+import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
-const MAX_MB = 5
+const NEW_CATEGORY = '__new__'
+const MAX_PICK_MB = 20 // larger photos are downsized before upload
+const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue' }
 const empty = {
   publisher_name: '', title: '', category: '', description: '', contact_method: 'whatsapp',
   contact_info: '', external_url: '', expires_at: '',
+}
+
+function NewCategoryFields({ value, onChange, errors }) {
+  const set = (k, v) => onChange({ ...value, [k]: v })
+  return (
+    <div className="new-cat">
+      <Field label="New category name" htmlFor="cat_name" error={errors.name}>
+        <input id="cat_name" value={value.name} maxLength={40} onChange={(e) => set('name', e.target.value)}
+          placeholder="e.g. Sports & Fitness" />
+      </Field>
+      <Field label="Short description (optional)" htmlFor="cat_desc" error={errors.description}>
+        <input id="cat_desc" value={value.description} maxLength={200} onChange={(e) => set('description', e.target.value)} />
+      </Field>
+      <div className="field">
+        <span className="label">Icon</span>
+        <div className="icon-picker" role="radiogroup" aria-label="Category icon">
+          {Object.entries(ICONS).map(([key, Icon]) => (
+            <button type="button" key={key} role="radio" aria-checked={value.icon === key} aria-label={key}
+              className={`icon-choice tone-${value.color} ${value.icon === key ? 'selected' : ''}`} onClick={() => set('icon', key)}>
+              <Icon size={18} />
+            </button>
+          ))}
+        </div>
+        {errors.icon && <small className="field-error">{errors.icon}</small>}
+      </div>
+      <div className="field">
+        <span className="label">Colour</span>
+        <div className="row" role="radiogroup" aria-label="Category colour">
+          {CATEGORY_COLORS.map((c) => (
+            <button type="button" key={c} role="radio" aria-checked={value.color === c} aria-label={c}
+              className={`swatch tone-${c} ${value.color === c ? 'selected' : ''}`} onClick={() => set('color', c)} />
+          ))}
+        </div>
+      </div>
+      <small className="muted">New categories appear for everyone once a moderator approves them.</small>
+    </div>
+  )
 }
 
 function Field({ label, error, hint, children, htmlFor }) {
@@ -26,9 +66,15 @@ function Field({ label, error, hint, children, htmlFor }) {
 
 export default function AnnouncementForm() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const { isAdmin } = useAuth()
   const { categories, loading: catLoading } = useCategories()
-  const [form, setForm] = useState(empty)
+  const [form, setForm] = useState(() => ({ ...empty, category: params.get('new_category') ? NEW_CATEGORY : '' }))
+  const [newCat, setNewCat] = useState(emptyCategory)
+  const [catErrors, setCatErrors] = useState({})
+  // Remember a category created on an earlier (failed) submit so we don't create it twice.
+  const [createdCat, setCreatedCat] = useState(null)
+  const [preparing, setPreparing] = useState(false)
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -46,34 +92,56 @@ export default function AnnouncementForm() {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const method = CONTACT_METHODS.find((m) => m.value === form.contact_method)
 
-  const pickFile = (e) => {
-    const f = e.target.files?.[0]
+  const pickFile = async (e) => {
+    const input = e.target
+    const f = input.files?.[0]
     setFields((x) => ({ ...x, image: undefined }))
     if (!f) return setFile(null)
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) {
-      setFields((x) => ({ ...x, image: 'Only JPEG, PNG or WebP images are allowed.' })); e.target.value = ''; return
+    const fail = (msg) => { setFields((x) => ({ ...x, image: msg })); input.value = '' }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) return fail('Only JPEG, PNG or WebP images are allowed.')
+    if (f.size > MAX_PICK_MB * 1024 * 1024) return fail(`Image must be ${MAX_PICK_MB}MB or smaller.`)
+    setPreparing(true)
+    try {
+      const small = await shrinkImage(f)
+      if (small.size > MAX_UPLOAD_BYTES) return fail('This image is too large even after resizing. Try a smaller one.')
+      setFile(small)
+    } catch {
+      fail('Could not read this image. Try a different file.')
+    } finally { setPreparing(false) }
+  }
+
+  const ensureCategory = async () => {
+    if (form.category !== NEW_CATEGORY) return form.category
+    if (createdCat && createdCat.name === newCat.name.trim()) return createdCat.id
+    setCatErrors({})
+    try {
+      const { data } = await api.post('/categories/', newCat)
+      setCreatedCat({ id: data.id, name: newCat.name.trim() })
+      return data.id
+    } catch (err) {
+      const parsed = parseError(err)
+      setCatErrors(parsed.fields)
+      throw Object.assign(new Error(parsed.message), { parsed })
     }
-    if (f.size > MAX_MB * 1024 * 1024) {
-      setFields((x) => ({ ...x, image: `Image must be ${MAX_MB}MB or smaller.` })); e.target.value = ''; return
-    }
-    setFile(f)
   }
 
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setError(''); setFields({})
-    const body = new FormData()
-    Object.entries(form).forEach(([k, v]) => {
-      if ((k === 'expires_at' || k === 'external_url') && !v) return
-      body.append(k, v)
-    })
-    if (file) body.append('image', file)
     try {
+      const categoryId = await ensureCategory()
+      const body = new FormData()
+      Object.entries({ ...form, category: categoryId }).forEach(([k, v]) => {
+        if ((k === 'expires_at' || k === 'external_url') && !v) return
+        body.append(k, v)
+      })
+      if (file) body.append('image', file)
       const { data } = await api.post('/announcements/', body)
       setSuccess(data)
     } catch (err) {
-      const parsed = parseError(err)
-      setError(parsed.message); setFields(parsed.fields)
+      const parsed = err.parsed || parseError(err)
+      setError(err.parsed ? `New category: ${parsed.message}` : parsed.message)
+      if (!err.parsed) setFields(parsed.fields)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally { setBusy(false) }
   }
@@ -92,7 +160,9 @@ export default function AnnouncementForm() {
         </p>
         <div className="row">
           <Link to="/explore" className="btn btn-primary">Browse announcements</Link>
-          <button className="btn" onClick={() => { setSuccess(null); setForm(empty); setFile(null) }}>Post another</button>
+          <button className="btn" onClick={() => {
+            setSuccess(null); setForm(empty); setFile(null); setNewCat(emptyCategory); setCreatedCat(null)
+          }}>Post another</button>
         </div>
       </div>
     )
@@ -119,15 +189,17 @@ export default function AnnouncementForm() {
         <select id="category" value={form.category} onChange={set('category')} required>
           <option value="" disabled>Select a category</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <option value={NEW_CATEGORY}>+ Create a new category</option>
         </select>
       </Field>
+      {form.category === NEW_CATEGORY && <NewCategoryFields value={newCat} onChange={setNewCat} errors={catErrors} />}
 
       <Field label="Description" htmlFor="description" error={fields.description} hint={`${form.description.length}/3000`}>
         <textarea id="description" rows={6} value={form.description} onChange={set('description')} maxLength={3000} required
           placeholder="Share the details: what, when, where, price, how to join..." />
       </Field>
 
-      <Field label="Image (optional)" error={fields.image} hint={`JPEG, PNG or WebP, up to ${MAX_MB}MB`} htmlFor="image">
+      <Field label="Image (optional)" error={fields.image} hint={preparing ? 'Preparing image...' : 'JPEG, PNG or WebP. Large photos are resized automatically.'} htmlFor="image">
         {shownImage ? (
           <div className="img-preview">
             <img src={shownImage} alt="Selected" />
@@ -162,7 +234,7 @@ export default function AnnouncementForm() {
       </div>
 
       <div className="row form-actions">
-        <button className="btn btn-primary" disabled={busy}>{busy ? 'Submitting...' : 'Submit for approval'}</button>
+        <button className="btn btn-primary" disabled={busy || preparing}>{busy ? 'Submitting...' : 'Submit for approval'}</button>
         <button type="button" className="btn" onClick={() => navigate(-1)}>Cancel</button>
       </div>
     </form>

@@ -162,7 +162,13 @@ if not DEBUG:
 
 # Uploads
 DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+# Vercel rejects request bodies over 4.5MB; the frontend also downsizes images.
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+STORAGES = {
+    'default': {'BACKEND': 'announcements.storage.DatabaseStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.SessionAuthentication'],
@@ -175,5 +181,6 @@ REST_FRAMEWORK = {
         'auth': os.environ.get('AUTH_THROTTLE_RATE', '30/min'),
         'announce': os.environ.get('ANNOUNCE_THROTTLE_RATE', '10/hour'),
         'report': os.environ.get('REPORT_THROTTLE_RATE', '20/hour'),
+        'category': os.environ.get('CATEGORY_THROTTLE_RATE', '10/hour'),
     },
 }

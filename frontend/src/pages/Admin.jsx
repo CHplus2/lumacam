@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, Clock, Flag, Layers, Trash2, X } from 'lucide-react'
+import { Check, Clock, Flag, FolderPlus, Layers, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, Spinner, StatusBadge } from '../components/ui'
-import { fmtDate } from '../utils'
+import { ICONS, fmtDate } from '../utils'
 
 const TABS = [
   { key: 'pending', label: 'Pending' },
@@ -11,6 +11,7 @@ const TABS = [
   { key: 'rejected', label: 'Rejected' },
   { key: 'all', label: 'All' },
   { key: 'reports', label: 'Reports' },
+  { key: 'categories', label: 'Categories' },
 ]
 
 function Stat({ icon: Icon, label, value, tone }) {
@@ -27,6 +28,7 @@ export default function Admin() {
   const [stats, setStats] = useState(null)
   const [items, setItems] = useState([])
   const [reports, setReports] = useState([])
+  const [cats, setCats] = useState([])
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -39,7 +41,10 @@ export default function Admin() {
   const load = useCallback(async (pageNo = 1) => {
     setLoading(true); setError('')
     try {
-      if (tab === 'reports') {
+      if (tab === 'categories') {
+        const { data } = await api.get('/admin/categories/')
+        setCats(data)
+      } else if (tab === 'reports') {
         const { data } = await api.get('/admin/reports/', { params: { status: 'open' } })
         setReports(data.results)
       } else {
@@ -69,6 +74,12 @@ export default function Admin() {
     if (!window.confirm(`Permanently delete "${a.title}"?`)) return
     act(() => api.delete(`/admin/announcements/${a.id}/`))
   }
+  const approveCategory = (c) => act(() => api.post(`/admin/categories/${c.id}/approve/`))
+  const deleteCategory = (c) => {
+    const note = c.announcement_count ? ` Its ${c.announcement_count} announcement(s) will move to "Other Announcements".` : ''
+    if (!window.confirm(`Delete the category "${c.name}"?${note}`)) return
+    act(() => api.delete(`/admin/categories/${c.id}/`))
+  }
   const closeReport = (r, how) => act(() => api.post(`/admin/reports/${r.id}/${how}/`))
 
   return (
@@ -80,6 +91,7 @@ export default function Admin() {
         <Stat icon={Check} label="Approved" value={stats?.approved} tone="emerald" />
         <Stat icon={X} label="Rejected" value={stats?.rejected} tone="rose" />
         <Stat icon={Flag} label="Open reports" value={stats?.open_reports} tone="violet" />
+        <Stat icon={FolderPlus} label="New categories" value={stats?.pending_categories} tone="teal" />
       </div>
 
       <div className="chips" role="tablist">
@@ -87,12 +99,36 @@ export default function Admin() {
           <button key={t.key} role="tab" aria-selected={tab === t.key}
             className={`chip ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
             {t.label}{t.key === 'pending' && stats?.pending ? ` (${stats.pending})` : ''}
+            {t.key === 'categories' && stats?.pending_categories ? ` (${stats.pending_categories})` : ''}
           </button>
         ))}
       </div>
 
       <ErrorBox message={error} />
-      {loading && !items.length && !reports.length ? <Spinner /> : tab === 'reports' ? (
+      {loading && !items.length && !reports.length && !cats.length ? <Spinner /> : tab === 'categories' ? (
+        <ul className="list">
+          {cats.map((c) => {
+            const Icon = ICONS[c.icon]
+            return (
+              <li key={c.id} className="card list-row">
+                <span className={`cat-icon tone-${c.color}`}>{Icon && <Icon size={22} />}</span>
+                <div className="grow">
+                  <div className="row wrap">
+                    <strong>{c.name}</strong>
+                    <span className={`status status-${c.is_approved ? 'approved' : 'pending'}`}>{c.is_approved ? 'live' : 'pending'}</span>
+                  </div>
+                  {c.description && <p className="ann-desc">{c.description}</p>}
+                  <p className="muted small">{c.announcement_count} announcement(s)</p>
+                </div>
+                <div className="row">
+                  {!c.is_approved && <button className="btn btn-sm btn-success" onClick={() => approveCategory(c)}><Check size={14} /> Approve</button>}
+                  {c.slug !== 'other' && <button className="btn btn-sm btn-danger" onClick={() => deleteCategory(c)}><Trash2 size={14} /> Delete</button>}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      ) : tab === 'reports' ? (
         reports.length === 0 ? <EmptyState title="No open reports" text="Reported announcements will show up here." /> : (
           <ul className="list">
             {reports.map((r) => (

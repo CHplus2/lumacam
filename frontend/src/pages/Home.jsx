@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Search } from 'lucide-react'
+import { ArrowRight, FolderPlus, Search } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { AnnouncementCard, CategoryCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
@@ -41,7 +41,10 @@ export default function Home() {
       </section>
 
       <section>
-        <div className="section-head"><h2>Explore categories</h2></div>
+        <div className="section-head">
+          <h2>Explore categories</h2>
+          <Link to="/create?new_category=1" className="link-more"><FolderPlus size={16} /> Create a category</Link>
+        </div>
         <ErrorBox message={catError} onRetry={reload} />
         {catLoading ? <Spinner /> : (
           <div className="cat-grid">

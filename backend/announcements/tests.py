@@ -260,3 +260,93 @@ class LiveFlowTests(LiveServerTestCase):
         self.assertEqual(self.call('POST', f'/api/admin/announcements/{ann["id"]}/approve/')[1]['status'], 'approved')
         listing = self.call('GET', '/api/announcements/?category=events&search=hack')[1]
         self.assertEqual([a['id'] for a in listing['results']], [ann['id']])
+
+
+class ImageStorageTests(BaseCase):
+    def test_uploaded_image_is_stored_in_db_and_served(self):
+        from announcements.models import StoredFile
+        r = APIClient().post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(StoredFile.objects.count(), 1)
+        url = r.data['image_url']
+        self.assertTrue(url.startswith('/media/announcements/'))
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'image/png')
+        self.assertTrue(resp.content.startswith(b'\x89PNG'))
+        self.assertEqual(self.client.get('/media/announcements/missing.png').status_code, 404)
+
+    def test_deleting_announcement_removes_image(self):
+        from announcements.models import StoredFile
+        r = APIClient().post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        self.admin_client().delete(f"/api/admin/announcements/{r.data['id']}/")
+        self.assertEqual(StoredFile.objects.count(), 0)
+
+
+class CategoryTests(BaseCase):
+    new = {'name': 'Sports & Fitness', 'description': 'Games and gym buddies', 'icon': 'dumbbell', 'color': 'teal'}
+
+    def test_public_category_is_pending_and_hidden(self):
+        r = APIClient().post('/api/categories/', self.new)
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual((r.data['slug'], r.data['is_approved']), ('sports-fitness', False))
+        slugs = [c['slug'] for c in APIClient().get('/api/categories/').data]
+        self.assertNotIn('sports-fitness', slugs)
+        self.assertEqual(len(slugs), 6)
+
+    def test_admin_category_is_live(self):
+        r = self.admin_client().post('/api/categories/', self.new)
+        self.assertTrue(r.data['is_approved'])
+        self.assertIn('sports-fitness', [c['slug'] for c in APIClient().get('/api/categories/').data])
+
+    def test_validation(self):
+        c = APIClient()
+        self.assertEqual(c.post('/api/categories/', {**self.new, 'name': 'food & DRINKS'}).status_code, 400)
+        self.assertEqual(c.post('/api/categories/', {**self.new, 'icon': 'skull'}).status_code, 400)
+        self.assertEqual(c.post('/api/categories/', {**self.new, 'color': 'black'}).status_code, 400)
+        self.assertEqual(c.post('/api/categories/', {**self.new, 'name': 'x'}).status_code, 400)
+
+    def test_order_keeps_other_last(self):
+        self.admin_client().post('/api/categories/', self.new)
+        slugs = [c['slug'] for c in APIClient().get('/api/categories/').data]
+        self.assertEqual((slugs[0], slugs[-2], slugs[-1]), ('food-drinks', 'sports-fitness', 'other'))
+
+    def test_post_in_new_category_and_approval_publishes_both(self):
+        cat_id = APIClient().post('/api/categories/', self.new).data['id']
+        ann = APIClient().post('/api/announcements/', self.payload(category=cat_id)).data
+        admin = self.admin_client()
+        self.assertEqual(admin.get('/api/admin/stats/').data['pending_categories'], 1)
+        admin.post(f"/api/admin/announcements/{ann['id']}/approve/")
+        self.assertTrue(Category.objects.get(pk=cat_id).is_approved)
+        r = APIClient().get('/api/announcements/?category=sports-fitness')
+        self.assertEqual([a['id'] for a in r.data['results']], [ann['id']])
+
+    def test_approved_post_hidden_while_category_pending(self):
+        cat = Category.objects.create(name='Hidden', slug='hidden', icon='tag', is_approved=False)
+        self.make(category=cat)
+        self.assertEqual(APIClient().get('/api/announcements/').data['count'], 0)
+
+    def test_admin_category_moderation(self):
+        cat_id = APIClient().post('/api/categories/', self.new).data['id']
+        c = APIClient()
+        self.assertIn(c.post(f'/api/admin/categories/{cat_id}/approve/').status_code, (401, 403))
+        self.assertIn(c.delete(f'/api/admin/categories/{cat_id}/').status_code, (401, 403))
+        admin = self.admin_client()
+        listed = {x['id']: x['is_approved'] for x in admin.get('/api/admin/categories/').data}
+        self.assertFalse(listed[cat_id])
+        self.assertTrue(admin.post(f'/api/admin/categories/{cat_id}/approve/').data['is_approved'])
+
+    def test_delete_moves_posts_to_other(self):
+        cat = Category.objects.create(name='Temp', slug='temp', icon='tag')
+        ann = self.make(category=cat)
+        admin = self.admin_client()
+        self.assertEqual(admin.delete(f'/api/admin/categories/{cat.id}/').status_code, 204)
+        ann.refresh_from_db()
+        self.assertEqual(ann.category.slug, 'other')
+        other = Category.objects.get(slug='other')
+        self.assertEqual(admin.delete(f'/api/admin/categories/{other.id}/').status_code, 400)
+
+    def test_category_rate_limit(self):
+        c = APIClient()
+        codes = [c.post('/api/categories/', {**self.new, 'name': f'Cat {i}'}).status_code for i in range(11)]
+        self.assertEqual((codes[:10], codes[10]), ([201] * 10, 429))

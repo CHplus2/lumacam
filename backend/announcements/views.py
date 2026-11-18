@@ -24,7 +24,7 @@ ORDERINGS = {
 def public_queryset():
     today = timezone.localdate()
     return (Announcement.objects.select_related('category', 'publisher')
-            .filter(status=Announcement.Status.APPROVED)
+            .filter(status=Announcement.Status.APPROVED, category__is_approved=True)
             .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=today)))
 
 
@@ -35,18 +35,29 @@ def apply_search(qs, term):
     return qs
 
 
-class CategoryListView(generics.ListAPIView):
+class CategoryListView(generics.ListCreateAPIView):
+    """Approved categories for everyone; anyone may suggest a new one."""
     serializer_class = CategorySerializer
     permission_classes = [AllowAny]
     pagination_class = None
+    throttle_scope = 'category'
+
+    def get_throttles(self):
+        return super().get_throttles() if self.request.method == 'POST' else []
 
     def get_queryset(self):
         today = timezone.localdate()
         live = Q(announcements__status=Announcement.Status.APPROVED) & (
             Q(announcements__expires_at__isnull=True) | Q(announcements__expires_at__gte=today))
         # Meta.ordering is ignored on aggregate queries, so order explicitly.
-        return (Category.objects.annotate(announcement_count=Count('announcements', filter=live))
+        return (Category.objects.filter(is_approved=True)
+                .annotate(announcement_count=Count('announcements', filter=live))
                 .order_by('sort_order', 'name'))
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        is_admin = user.is_authenticated and user.role == User.Role.ADMIN
+        serializer.save(is_approved=is_admin)
 
 
 class AnnouncementListCreateView(generics.ListCreateAPIView):
@@ -133,6 +144,8 @@ class AdminModerateView(APIView):
         ann = get_object_or_404(Announcement, pk=pk)
         if self.action == 'approve':
             ann.status, ann.rejection_reason = Announcement.Status.APPROVED, ''
+            if not ann.category.is_approved:  # approving a post also publishes its new category
+                Category.objects.filter(pk=ann.category_id).update(is_approved=True)
         else:
             ann.status = Announcement.Status.REJECTED
             ann.rejection_reason = str(request.data.get('reason', ''))[:300].strip()
@@ -161,7 +174,7 @@ class AdminStatsView(APIView):
             'approved': counts.get(Announcement.Status.APPROVED, 0),
             'rejected': counts.get(Announcement.Status.REJECTED, 0),
             'open_reports': Report.objects.filter(status=Report.Status.OPEN).count(),
-            'students': User.objects.filter(role=User.Role.STUDENT).count(),
+            'pending_categories': Category.objects.filter(is_approved=False).count(),
             'by_category': by_category,
         })
 
@@ -187,3 +200,55 @@ class AdminReportResolveView(APIView):
         report.status = self.new_status
         report.save(update_fields=['status'])
         return Response(ReportSerializer(report).data)
+
+
+class AdminCategoryListView(generics.ListAPIView):
+    serializer_class = CategorySerializer
+    permission_classes = [IsAdminRole]
+    pagination_class = None
+
+    def get_queryset(self):
+        return (Category.objects.annotate(announcement_count=Count('announcements'))
+                .order_by('is_approved', 'sort_order', 'name'))
+
+
+class AdminCategoryApproveView(APIView):
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+        cat = get_object_or_404(Category, pk=pk)
+        cat.is_approved = True
+        cat.save(update_fields=['is_approved'])
+        return Response(CategorySerializer(cat).data)
+
+
+class AdminCategoryDeleteView(APIView):
+    """Delete a category; its announcements move to "Other Announcements"."""
+    permission_classes = [IsAdminRole]
+    FALLBACK = 'other'
+
+    def delete(self, request, pk):
+        cat = get_object_or_404(Category, pk=pk)
+        if cat.slug == self.FALLBACK:
+            return Response({'detail': 'The "Other Announcements" category cannot be deleted.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        fallback = Category.objects.filter(slug=self.FALLBACK).first()
+        if fallback is None:
+            return Response({'detail': 'Fallback category is missing.'}, status=status.HTTP_400_BAD_REQUEST)
+        cat.announcements.update(category=fallback)
+        cat.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def serve_media(request, path):
+    """Serve images kept in the database (see storage.DatabaseStorage)."""
+    from django.http import HttpResponse
+    from .models import StoredFile
+    obj = StoredFile.objects.filter(name=path).only('content', 'content_type').first()
+    if obj is None:
+        raise Http404
+    resp = HttpResponse(bytes(obj.content), content_type=obj.content_type)
+    # File names are random UUIDs and never change, so they can be cached for long.
+    resp['Cache-Control'] = 'public, max-age=31536000, immutable'
+    resp['X-Content-Type-Options'] = 'nosniff'
+    return resp

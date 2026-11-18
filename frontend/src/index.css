@@ -179,8 +179,19 @@ label { font-weight: 600; font-size: 0.9rem; }
 .img-preview img { border-radius: 14px; border: 1px solid var(--border); max-height: 240px; width: 100%; object-fit: cover; }
 .img-preview .icon-btn { position: absolute; top: 8px; right: 8px; background: #fff; box-shadow: var(--shadow); }
 
+/* New category picker */
+.label { font-weight: 600; font-size: 0.9rem; }
+.new-cat { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px dashed var(--border); border-radius: 14px; background: #fafbff; }
+.icon-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 8px; }
+.icon-choice { height: 40px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.icon-choice:hover { color: var(--tone-fg); }
+.icon-choice.selected { background: var(--tone-bg); color: var(--tone-fg); border-color: var(--tone-fg); }
+.swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid #fff; background: var(--tone-fg); cursor: pointer; box-shadow: 0 0 0 1px var(--border); }
+.swatch.selected { box-shadow: 0 0 0 2px var(--tone-fg); }
+.list-row .cat-icon { margin-bottom: 0; background: var(--tone-bg); }
+
 /* Admin */
-.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
 .stat { display: flex; gap: 12px; align-items: center; padding: 16px; border-radius: 16px; background: var(--tone-bg); color: var(--tone-fg); }
 .stat-value { font-size: 1.6rem; font-weight: 800; line-height: 1; color: var(--text); }
 .stat-label { font-size: 0.8rem; color: #4b5563; }

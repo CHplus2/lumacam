@@ -9,7 +9,11 @@ class Category(models.Model):
     description = models.CharField(max_length=200, blank=True)
     icon = models.CharField(max_length=40, help_text='Lucide icon identifier, e.g. "utensils"')
     color = models.CharField(max_length=20, default='blue', help_text='Theme colour key used by the frontend')
-    sort_order = models.PositiveSmallIntegerField(default=0)
+    sort_order = models.PositiveSmallIntegerField(default=50)
+    # Categories suggested by the public stay hidden until a moderator approves
+    # them (or approves the first announcement that uses them).
+    is_approved = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
     class Meta:
         ordering = ['sort_order', 'name']
@@ -85,3 +89,15 @@ class Report(models.Model):
 
     def __str__(self):
         return f'Report #{self.pk} on {self.announcement_id}'
+
+
+class StoredFile(models.Model):
+    """Binary file content for DatabaseStorage (uploaded images)."""
+    name = models.CharField(max_length=255, unique=True)
+    content = models.BinaryField()
+    content_type = models.CharField(max_length=100)
+    size = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name

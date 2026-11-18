@@ -6,10 +6,21 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
+from django.utils.text import slugify
+
 from .models import Announcement, Category, Report
 
 ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP'}
 ALLOWED_SCHEMES = ['http', 'https']
+
+
+# Must match the icon/colour maps in the frontend (src/utils.js, index.css).
+CATEGORY_ICONS = [
+    'utensils', 'shopping-bag', 'calendar-days', 'clipboard-list', 'briefcase-business', 'megaphone',
+    'tag', 'book-open', 'music', 'dumbbell', 'heart-handshake', 'laptop', 'gamepad-2', 'house',
+    'bus', 'shirt', 'palette', 'trophy', 'sparkles',
+]
+CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -17,7 +28,40 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'announcement_count')
+        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'is_approved', 'announcement_count')
+        read_only_fields = ('slug', 'is_approved')
+        extra_kwargs = {'name': {'validators': []}}  # uniqueness checked case-insensitively below
+
+    def validate_name(self, value):
+        value = ' '.join(value.split())
+        if not 2 <= len(value) <= 40:
+            raise serializers.ValidationError('Category name must be 2-40 characters.')
+        if Category.objects.filter(name__iexact=value).exists():
+            raise serializers.ValidationError('A category with this name already exists.')
+        return value
+
+    def validate_description(self, value):
+        value = value.strip()
+        if len(value) > 200:
+            raise serializers.ValidationError('Description must be 200 characters or fewer.')
+        return value
+
+    def validate_icon(self, value):
+        if value not in CATEGORY_ICONS:
+            raise serializers.ValidationError('Choose one of the available icons.')
+        return value
+
+    def validate_color(self, value):
+        if value not in CATEGORY_COLORS:
+            raise serializers.ValidationError('Choose one of the available colours.')
+        return value
+
+    def create(self, validated_data):
+        base = slugify(validated_data['name'])[:50] or 'category'
+        slug, n = base, 2
+        while Category.objects.filter(slug=slug).exists():
+            slug, n = f'{base}-{n}', n + 1
+        return Category.objects.create(slug=slug, **validated_data)
 
 
 class AnnouncementSerializer(serializers.ModelSerializer):

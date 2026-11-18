@@ -1,7 +1,9 @@
 import {
-  Utensils, ShoppingBag, CalendarDays, ClipboardList, BriefcaseBusiness, Megaphone,
+  Utensils, ShoppingBag, CalendarDays, ClipboardList, BriefcaseBusiness, Megaphone, Tag, BookOpen,
+  Music, Dumbbell, HeartHandshake, Laptop, Gamepad2, House, Bus, Shirt, Palette, Trophy, Sparkles,
 } from 'lucide-react'
 
+// Keep in sync with CATEGORY_ICONS / CATEGORY_COLORS in backend/announcements/serializers.py.
 export const ICONS = {
   utensils: Utensils,
   'shopping-bag': ShoppingBag,
@@ -9,7 +11,22 @@ export const ICONS = {
   'clipboard-list': ClipboardList,
   'briefcase-business': BriefcaseBusiness,
   megaphone: Megaphone,
+  tag: Tag,
+  'book-open': BookOpen,
+  music: Music,
+  dumbbell: Dumbbell,
+  'heart-handshake': HeartHandshake,
+  laptop: Laptop,
+  'gamepad-2': Gamepad2,
+  house: House,
+  bus: Bus,
+  shirt: Shirt,
+  palette: Palette,
+  trophy: Trophy,
+  sparkles: Sparkles,
 }
+
+export const CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
 
 export const CONTACT_METHODS = [
   { value: 'whatsapp', label: 'WhatsApp', placeholder: 'Phone number with country code, e.g. 60123456789' },
