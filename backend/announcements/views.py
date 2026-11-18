@@ -44,7 +44,9 @@ class CategoryListView(generics.ListAPIView):
         today = timezone.localdate()
         live = Q(announcements__status=Announcement.Status.APPROVED) & (
             Q(announcements__expires_at__isnull=True) | Q(announcements__expires_at__gte=today))
-        return Category.objects.annotate(announcement_count=Count('announcements', filter=live))
+        # Meta.ordering is ignored on aggregate queries, so order explicitly.
+        return (Category.objects.annotate(announcement_count=Count('announcements', filter=live))
+                .order_by('sort_order', 'name'))
 
 
 class AnnouncementListCreateView(generics.ListCreateAPIView):
@@ -152,7 +154,7 @@ class AdminStatsView(APIView):
     def get(self, request):
         counts = dict(Announcement.objects.values_list('status').annotate(n=Count('id')))
         by_category = list(Category.objects.annotate(total=Count('announcements'))
-                           .values('name', 'slug', 'total'))
+                           .order_by('sort_order', 'name').values('name', 'slug', 'total'))
         return Response({
             'total': sum(counts.values()),
             'pending': counts.get(Announcement.Status.PENDING, 0),

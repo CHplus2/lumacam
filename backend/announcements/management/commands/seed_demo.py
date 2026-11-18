@@ -55,6 +55,10 @@ def make_image(slug, label):
 class Command(BaseCommand):
     help = 'Create the demo admin and sample announcements.'
 
+    def add_arguments(self, parser):
+        parser.add_argument('--no-images', action='store_true',
+                            help='Skip placeholder images (use when media is not stored persistently, e.g. Vercel).')
+
     def handle(self, *args, **opts):
         admin, created = User.objects.get_or_create(username='admin', defaults={
             'email': 'admin@lumacam.test', 'is_staff': True, 'is_superuser': True})
@@ -72,7 +76,8 @@ class Command(BaseCommand):
                     status=Announcement.Status.APPROVED if i < 8 else Announcement.Status.PENDING,
                     expires_at=today + timedelta(days=days) if days else None,
                 )
-                ann.image.save('demo.jpg', make_image(slug, title), save=False)
+                if not opts['no_images']:
+                    ann.image.save('demo.jpg', make_image(slug, title), save=False)
                 ann.save()
         self.stdout.write(self.style.SUCCESS(
             'Demo data ready. Admin login: admin / Admin12345!'))
