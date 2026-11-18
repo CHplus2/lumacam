@@ -248,7 +248,8 @@ def serve_media(request, path):
     if obj is None:
         raise Http404
     resp = HttpResponse(bytes(obj.content), content_type=obj.content_type)
-    # File names are random UUIDs and never change, so they can be cached for long.
-    resp['Cache-Control'] = 'public, max-age=31536000, immutable'
+    # Keep caching short (also on Vercel's CDN) so images removed by a
+    # moderator stop being served within a few minutes.
+    resp['Cache-Control'] = 'public, max-age=300, s-maxage=300'
     resp['X-Content-Type-Options'] = 'nosniff'
     return resp
