@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ImagePlus, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
@@ -9,7 +9,7 @@ import { CONTACT_METHODS } from '../utils'
 
 const MAX_MB = 5
 const empty = {
-  title: '', category: '', description: '', contact_method: 'whatsapp',
+  publisher_name: '', title: '', category: '', description: '', contact_method: 'whatsapp',
   contact_info: '', external_url: '', expires_at: '',
 }
 
@@ -25,37 +25,16 @@ function Field({ label, error, hint, children, htmlFor }) {
 }
 
 export default function AnnouncementForm() {
-  const { id } = useParams()
-  const editing = Boolean(id)
   const navigate = useNavigate()
-  const { user, isAdmin } = useAuth()
+  const { isAdmin } = useAuth()
   const { categories, loading: catLoading } = useCategories()
   const [form, setForm] = useState(empty)
   const [file, setFile] = useState(null)
-  const [existingImage, setExistingImage] = useState(null)
-  const [removeImage, setRemoveImage] = useState(false)
   const [preview, setPreview] = useState(null)
-  const [loading, setLoading] = useState(editing)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fields, setFields] = useState({})
   const [success, setSuccess] = useState(null)
-
-  useEffect(() => {
-    if (!editing) return
-    api.get(`/announcements/${id}/`)
-      .then(({ data }) => {
-        if (data.publisher !== user.id) { navigate('/my-announcements', { replace: true }); return }
-        setForm({
-          title: data.title, category: String(data.category), description: data.description,
-          contact_method: data.contact_method, contact_info: data.contact_info,
-          external_url: data.external_url || '', expires_at: data.expires_at || '',
-        })
-        setExistingImage(data.image_url)
-      })
-      .catch((e) => setError(parseError(e).message))
-      .finally(() => setLoading(false))
-  }, [id, editing, user.id, navigate])
 
   useEffect(() => {
     if (!file) { setPreview(null); return undefined }
@@ -77,7 +56,7 @@ export default function AnnouncementForm() {
     if (f.size > MAX_MB * 1024 * 1024) {
       setFields((x) => ({ ...x, image: `Image must be ${MAX_MB}MB or smaller.` })); e.target.value = ''; return
     }
-    setFile(f); setRemoveImage(false)
+    setFile(f)
   }
 
   const submit = async (e) => {
@@ -85,14 +64,12 @@ export default function AnnouncementForm() {
     setBusy(true); setError(''); setFields({})
     const body = new FormData()
     Object.entries(form).forEach(([k, v]) => {
-      if (k === 'expires_at' || k === 'external_url') { if (v || editing) body.append(k, v) } else body.append(k, v)
+      if ((k === 'expires_at' || k === 'external_url') && !v) return
+      body.append(k, v)
     })
     if (file) body.append('image', file)
-    if (removeImage && !file) body.append('remove_image', 'true')
     try {
-      const { data } = editing
-        ? await api.patch(`/announcements/${id}/`, body)
-        : await api.post('/announcements/', body)
+      const { data } = await api.post('/announcements/', body)
       setSuccess(data)
     } catch (err) {
       const parsed = parseError(err)
@@ -101,34 +78,38 @@ export default function AnnouncementForm() {
     } finally { setBusy(false) }
   }
 
-  if (loading || catLoading) return <Spinner />
+  if (catLoading) return <Spinner />
 
   if (success) {
     const live = success.status === 'approved'
     return (
       <div className="card center-card">
-        <h1>{editing ? 'Changes saved' : 'Announcement submitted'}</h1>
+        <h1>Announcement submitted</h1>
         <p className="muted">
           {live
             ? 'Your announcement is live.'
-            : 'Your announcement is pending approval. It will appear for everyone once an administrator approves it.'}
+            : 'Thanks! Your announcement is pending approval and will appear for everyone once a moderator approves it.'}
         </p>
         <div className="row">
-          <Link to="/my-announcements" className="btn btn-primary">View my announcements</Link>
-          {!editing && <button className="btn" onClick={() => { setSuccess(null); setForm(empty); setFile(null) }}>Post another</button>}
+          <Link to="/explore" className="btn btn-primary">Browse announcements</Link>
+          <button className="btn" onClick={() => { setSuccess(null); setForm(empty); setFile(null) }}>Post another</button>
         </div>
       </div>
     )
   }
 
-  const shownImage = removeImage ? null : (preview || existingImage)
+  const shownImage = preview
   const today = new Date().toISOString().slice(0, 10)
 
   return (
     <form className="card form" onSubmit={submit} noValidate>
-      <h1>{editing ? 'Edit announcement' : 'Create announcement'}</h1>
-      {editing && !isAdmin && <div className="alert alert-warn">Saving changes sends this announcement back for approval.</div>}
+      <h1>Create announcement</h1>
+      {!isAdmin && <p className="muted">No account needed. A moderator reviews every post before it goes live.</p>}
       <ErrorBox message={error} />
+
+      <Field label="Your name" htmlFor="publisher_name" error={fields.publisher_name} hint="Shown as the publisher">
+        <input id="publisher_name" value={form.publisher_name} onChange={set('publisher_name')} maxLength={80} required autoComplete="name" />
+      </Field>
 
       <Field label="Title" htmlFor="title" error={fields.title}>
         <input id="title" value={form.title} onChange={set('title')} maxLength={120} required placeholder="e.g. Homemade nasi lemak, daily pre-order" />
@@ -151,7 +132,7 @@ export default function AnnouncementForm() {
           <div className="img-preview">
             <img src={shownImage} alt="Selected" />
             <button type="button" className="icon-btn" aria-label="Remove image"
-              onClick={() => { setFile(null); setRemoveImage(true) }}><X size={16} /></button>
+              onClick={() => setFile(null)}><X size={16} /></button>
           </div>
         ) : (
           <label className="upload" htmlFor="image"><ImagePlus size={22} /> Choose an image</label>
@@ -181,7 +162,7 @@ export default function AnnouncementForm() {
       </div>
 
       <div className="row form-actions">
-        <button className="btn btn-primary" disabled={busy}>{busy ? 'Submitting...' : editing ? 'Save changes' : 'Submit for approval'}</button>
+        <button className="btn btn-primary" disabled={busy}>{busy ? 'Submitting...' : 'Submit for approval'}</button>
         <button type="button" className="btn" onClick={() => navigate(-1)}>Cancel</button>
       </div>
     </form>

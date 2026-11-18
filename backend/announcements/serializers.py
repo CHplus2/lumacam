@@ -23,24 +23,18 @@ class CategorySerializer(serializers.ModelSerializer):
 class AnnouncementSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
     category_detail = CategorySerializer(source='category', read_only=True)
-    publisher_name = serializers.SerializerMethodField()
     image = serializers.ImageField(write_only=True, required=False, allow_null=True)
-    remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
     image_url = serializers.SerializerMethodField()
     open_reports = serializers.SerializerMethodField()
 
     class Meta:
         model = Announcement
         fields = (
-            'id', 'title', 'description', 'category', 'category_detail', 'publisher', 'publisher_name',
-            'image', 'remove_image', 'image_url', 'contact_method', 'contact_info', 'external_url',
+            'id', 'title', 'description', 'category', 'category_detail', 'publisher_name',
+            'image', 'image_url', 'contact_method', 'contact_info', 'external_url',
             'status', 'rejection_reason', 'created_at', 'updated_at', 'expires_at', 'open_reports',
         )
-        read_only_fields = ('publisher', 'status', 'rejection_reason', 'created_at', 'updated_at')
-
-    def get_publisher_name(self, obj):
-        user = obj.publisher
-        return user.get_full_name() or user.username
+        read_only_fields = ('status', 'rejection_reason', 'created_at', 'updated_at')
 
     def get_image_url(self, obj):
         return obj.image.url if obj.image else None
@@ -49,6 +43,12 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         return getattr(obj, 'open_reports', None)
 
     # ---- validation ----
+    def validate_publisher_name(self, value):
+        value = value.strip()
+        if len(value) < 2:
+            raise serializers.ValidationError('Please enter your name (at least 2 characters).')
+        return value
+
     def validate_title(self, value):
         value = value.strip()
         if len(value) < 3:
@@ -108,29 +108,20 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             attrs['contact_info'] = info
         return attrs
 
-    def create(self, validated_data):
-        validated_data.pop('remove_image', None)
-        return super().create(validated_data)
-
-    def update(self, instance, validated_data):
-        remove = validated_data.pop('remove_image', False)
-        if remove and 'image' not in validated_data:
-            if instance.image:
-                instance.image.delete(save=False)
-            instance.image = ''
-        return super().update(instance, validated_data)
-
 
 class ReportSerializer(serializers.ModelSerializer):
     announcement_title = serializers.CharField(source='announcement.title', read_only=True)
     announcement_status = serializers.CharField(source='announcement.status', read_only=True)
-    reporter_name = serializers.CharField(source='reporter.username', read_only=True)
+    reporter_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Report
         fields = ('id', 'announcement', 'announcement_title', 'announcement_status', 'reporter_name',
                   'reason', 'status', 'created_at')
         read_only_fields = ('announcement', 'status', 'created_at')
+
+    def get_reporter_name(self, obj):
+        return obj.reporter.username if obj.reporter else 'Anonymous'
 
     def validate_reason(self, value):
         value = value.strip()

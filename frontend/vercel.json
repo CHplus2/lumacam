@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://backend-delta-blue-48.vercel.app/api/:path*" },
+    { "source": "/media/:path*", "destination": "https://backend-delta-blue-48.vercel.app/media/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

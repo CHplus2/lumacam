@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Aperture, Bell, Compass, FileText, House, LogIn, Plus, ShieldCheck, User,
+  Aperture, Bell, Compass, House, LogIn, LogOut, Plus, ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '../auth'
 
@@ -38,7 +38,7 @@ function Notifications() {
 }
 
 export default function Layout() {
-  const { user, isAdmin, loading } = useAuth()
+  const { user, isAdmin, loading, logout } = useAuth()
   const { pathname } = useLocation()
   const navigate = useNavigate()
 
@@ -54,19 +54,17 @@ export default function Layout() {
           <nav className="nav-desktop" aria-label="Main">
             <NavLink to="/" end className={link}>Home</NavLink>
             <NavLink to="/explore" className={link}>Explore</NavLink>
-            <NavLink to="/my-announcements" className={link}>My Announcements</NavLink>
             <NavLink to="/create" className={link}>Create Announcement</NavLink>
-            <NavLink to="/profile" className={link}>Profile</NavLink>
             {isAdmin && <NavLink to="/admin" className={link}>Admin</NavLink>}
           </nav>
           <div className="header-actions">
             <Notifications />
-            {!loading && (user ? (
-              <button className="avatar" onClick={() => navigate('/profile')} aria-label="Your profile" title={user.username}>
-                {user.username.slice(0, 1).toUpperCase()}
+            {!loading && (isAdmin ? (
+              <button className="btn btn-sm" onClick={async () => { await logout(); navigate('/') }}>
+                <LogOut size={16} /> Log out
               </button>
             ) : (
-              <Link to="/login" className="btn btn-primary btn-sm"><LogIn size={16} /> Log in</Link>
+              <Link to="/login" className="btn btn-sm"><LogIn size={16} /> Admin login</Link>
             ))}
           </div>
         </div>
@@ -82,9 +80,8 @@ export default function Layout() {
         <NavLink to="/" end className={link}><House size={22} /><span>Home</span></NavLink>
         <NavLink to="/explore" className={link}><Compass size={22} /><span>Explore</span></NavLink>
         <NavLink to="/create" className="nav-create" aria-label="Create announcement"><Plus size={28} strokeWidth={2.6} /></NavLink>
-        <NavLink to="/my-announcements" className={link}><FileText size={22} /><span>My Posts</span></NavLink>
-        <NavLink to={isAdmin ? '/admin' : '/profile'} className={link}>
-          {isAdmin ? <ShieldCheck size={22} /> : <User size={22} />}<span>{isAdmin ? 'Admin' : 'Profile'}</span>
+        <NavLink to={isAdmin ? '/admin' : '/login'} className={link}>
+          <ShieldCheck size={22} /><span>Admin</span>
         </NavLink>
       </nav>
     </div>

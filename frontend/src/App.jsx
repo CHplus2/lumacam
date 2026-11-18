@@ -6,9 +6,7 @@ import Home from './pages/Home'
 import Listing from './pages/Listing'
 import Detail from './pages/Detail'
 import AnnouncementForm from './pages/AnnouncementForm'
-import MyAnnouncements from './pages/MyAnnouncements'
-import Profile from './pages/Profile'
-import { Login, Register } from './pages/AuthPages'
+import Login from './pages/Login'
 import Admin from './pages/Admin'
 
 function RequireAuth({ admin = false, children }) {
@@ -29,11 +27,7 @@ export default function App() {
         <Route path="category/:slug" element={<Listing />} />
         <Route path="announcements/:id" element={<Detail />} />
         <Route path="login" element={<Login />} />
-        <Route path="register" element={<Register />} />
-        <Route path="create" element={<RequireAuth><AnnouncementForm /></RequireAuth>} />
-        <Route path="announcements/:id/edit" element={<RequireAuth><AnnouncementForm /></RequireAuth>} />
-        <Route path="my-announcements" element={<RequireAuth><MyAnnouncements /></RequireAuth>} />
-        <Route path="profile" element={<RequireAuth><Profile /></RequireAuth>} />
+        <Route path="create" element={<AnnouncementForm />} />
         <Route path="admin" element={<RequireAuth admin><Admin /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

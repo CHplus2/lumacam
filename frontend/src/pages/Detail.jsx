@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Calendar, ExternalLink, Flag, Mail, MessageCircle, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Calendar, ExternalLink, Flag, Mail, MessageCircle, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useAuth } from '../auth'
 import { CategoryBadge, EmptyState, ErrorBox, Spinner, StatusBadge } from '../components/ui'
@@ -47,7 +47,7 @@ function ReportForm({ id }) {
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user, isAdmin } = useAuth()
+  const { isAdmin } = useAuth()
   const [a, setA] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -68,15 +68,13 @@ export default function Detail() {
 
   const contact = contactLink(a)
   const formUrl = safeUrl(a.external_url)
-  const isOwner = user && a.publisher_name && user.username && (user.id === a.publisher)
-  const canManage = isOwner || isAdmin
   const ContactIcon = a.contact_method === 'email' ? Mail : a.contact_method === 'whatsapp' ? MessageCircle : ExternalLink
 
   const remove = async () => {
     if (!window.confirm('Delete this announcement permanently?')) return
     try {
-      await api.delete(isAdmin && !isOwner ? `/admin/announcements/${a.id}/` : `/announcements/${a.id}/`)
-      navigate('/my-announcements')
+      await api.delete(`/admin/announcements/${a.id}/`)
+      navigate('/admin')
     } catch (e) { setError(parseError(e).message) }
   }
 
@@ -124,13 +122,12 @@ export default function Detail() {
           </div>
         </div>
 
-        {canManage && (
+        {isAdmin && (
           <div className="row manage">
-            {isOwner && <Link to={`/announcements/${a.id}/edit`} className="btn btn-sm"><Pencil size={15} /> Edit</Link>}
             <button className="btn btn-sm btn-danger" onClick={remove}><Trash2 size={15} /> Delete</button>
           </div>
         )}
-        {user && !isOwner && a.status === 'approved' && <ReportForm id={a.id} />}
+        {a.status === 'approved' && <ReportForm id={a.id} />}
       </div>
     </article>
   )

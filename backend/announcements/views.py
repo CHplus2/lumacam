@@ -1,10 +1,10 @@
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -48,8 +48,15 @@ class CategoryListView(generics.ListAPIView):
 
 
 class AnnouncementListCreateView(generics.ListCreateAPIView):
+    """Public browsing and public posting (no account needed). Posts start as pending."""
     serializer_class = AnnouncementSerializer
+    permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    throttle_scope = 'announce'
+
+    def get_throttles(self):
+        # Rate-limit submissions only, never browsing.
+        return super().get_throttles() if self.request.method == 'POST' else []
 
     def get_queryset(self):
         p = self.request.query_params
@@ -58,69 +65,43 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
             qs = qs.filter(category__slug=p['category'])
         qs = apply_search(qs, p.get('search'))
         order = ORDERINGS.get(p.get('ordering'), '-created_at')
-        # Tie-break so pagination is stable; expiring posts without expiry go last.
         if order == 'expires_at':
-            from django.db.models import F
             return qs.order_by(F('expires_at').asc(nulls_last=True), '-created_at')
         return qs.order_by(order, '-id')
 
     def perform_create(self, serializer):
         user = self.request.user
-        initial = Announcement.Status.APPROVED if user.role == User.Role.ADMIN else Announcement.Status.PENDING
-        serializer.save(publisher=user, status=initial)
+        if user.is_authenticated and user.role == User.Role.ADMIN:
+            serializer.save(publisher=user, status=Announcement.Status.APPROVED)
+        else:
+            serializer.save(publisher=None, status=Announcement.Status.PENDING)
 
 
-class MyAnnouncementsView(generics.ListAPIView):
+class AnnouncementDetailView(generics.RetrieveAPIView):
     serializer_class = AnnouncementSerializer
-    permission_classes = [IsAuthenticated]
-    pagination_class = None
-
-    def get_queryset(self):
-        return (Announcement.objects.select_related('category', 'publisher')
-                .filter(publisher=self.request.user).order_by('-created_at'))
-
-
-class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = AnnouncementSerializer
-    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    permission_classes = [AllowAny]
 
     def get_object(self):
         obj = get_object_or_404(Announcement.objects.select_related('category', 'publisher'), pk=self.kwargs['pk'])
         user = self.request.user
-        is_owner = user.is_authenticated and obj.publisher_id == user.id
         is_admin = user.is_authenticated and user.role == User.Role.ADMIN
-        if self.request.method in ('GET', 'HEAD', 'OPTIONS'):
-            expired = obj.expires_at and obj.expires_at < timezone.localdate()
-            visible = obj.status == Announcement.Status.APPROVED and not expired
-            if not (visible or is_owner or is_admin):
-                from django.http import Http404
-                raise Http404
-        elif not (is_owner or is_admin):
-            raise PermissionDenied('You can only modify your own announcements.')
+        expired = obj.expires_at and obj.expires_at < timezone.localdate()
+        visible = obj.status == Announcement.Status.APPROVED and not expired
+        if not (visible or is_admin):
+            raise Http404
         return obj
-
-    def perform_update(self, serializer):
-        user = self.request.user
-        extra = {}
-        if user.role != User.Role.ADMIN:
-            # Any edit by a student goes back through moderation.
-            extra = {'status': Announcement.Status.PENDING, 'rejection_reason': ''}
-        serializer.save(**extra)
 
 
 class ReportCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     throttle_scope = 'report'
 
     def post(self, request, pk):
         ann = get_object_or_404(public_queryset(), pk=pk)
-        if ann.publisher_id == request.user.id:
-            return Response({'detail': 'You cannot report your own announcement.'}, status=status.HTTP_400_BAD_REQUEST)
-        if Report.objects.filter(announcement=ann, reporter=request.user, status=Report.Status.OPEN).exists():
-            return Response({'detail': 'You have already reported this announcement.'}, status=status.HTTP_400_BAD_REQUEST)
         serializer = ReportSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(announcement=ann, reporter=request.user)
+        reporter = request.user if request.user.is_authenticated else None
+        serializer.save(announcement=ann, reporter=reporter)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 

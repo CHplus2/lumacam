@@ -36,6 +36,9 @@ DEMO = [
 ]
 
 
+NAMES = ['Aina', 'Daniel', 'Priya', 'Wei Jie', 'Siti']
+
+
 def make_image(slug, label):
     top, bottom = PALETTE[slug]
     img = Image.new('RGB', (800, 500))
@@ -50,7 +53,7 @@ def make_image(slug, label):
 
 
 class Command(BaseCommand):
-    help = 'Create demo admin, student users and announcements.'
+    help = 'Create the demo admin and sample announcements.'
 
     def handle(self, *args, **opts):
         admin, created = User.objects.get_or_create(username='admin', defaults={
@@ -58,24 +61,18 @@ class Command(BaseCommand):
         if created:
             admin.set_password('Admin12345!')
             admin.save()
-        student, created = User.objects.get_or_create(username='student', defaults={
-            'email': 'student@lumacam.test', 'first_name': 'Aina', 'last_name': 'Student'})
-        if created:
-            student.set_password('Student12345!')
-            student.save()
-
-        if Announcement.objects.filter(publisher=student).exists():
+        if Announcement.objects.exists():
             self.stdout.write('Demo announcements already exist; skipping.')
         else:
             today = timezone.localdate()
             for i, (slug, title, desc, method, info, days) in enumerate(DEMO):
                 ann = Announcement(
                     title=title, description=desc, category=Category.objects.get(slug=slug),
-                    publisher=student, contact_method=method, contact_info=info,
+                    publisher_name=NAMES[i % len(NAMES)], contact_method=method, contact_info=info,
                     status=Announcement.Status.APPROVED if i < 8 else Announcement.Status.PENDING,
                     expires_at=today + timedelta(days=days) if days else None,
                 )
                 ann.image.save('demo.jpg', make_image(slug, title), save=False)
                 ann.save()
         self.stdout.write(self.style.SUCCESS(
-            'Demo data ready. Admin: admin / Admin12345!   Student: student / Student12345!'))
+            'Demo data ready. Admin login: admin / Admin12345!'))

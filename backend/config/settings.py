@@ -26,7 +26,22 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-insecure-key-change-me')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = [h for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h]
+def _csv(name, default=''):
+    """Comma-separated env var -> list, tolerant of spaces, blanks and pasted URLs."""
+    items = []
+    for raw in os.environ.get(name, default).split(','):
+        item = raw.strip().rstrip('/')
+        if item:
+            items.append(item)
+    return items
+
+
+ALLOWED_HOSTS = [h.split('://', 1)[-1] for h in _csv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1')]
+# Vercel exposes its own hostnames (without scheme); trust them automatically.
+for _var in ('VERCEL_URL', 'VERCEL_BRANCH_URL', 'VERCEL_PROJECT_PRODUCTION_URL'):
+    _host = os.environ.get(_var, '').strip()
+    if _host and _host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host)
 
 
 # Application definition
@@ -76,11 +91,14 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# SQLite locally. Set DATABASE_URL (e.g. a hosted Postgres) for deployments
+# such as Vercel, where the local filesystem is read-only and not persistent.
+import dj_database_url  # noqa: E402
+
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}", conn_max_age=60,
+    )
 }
 
 
@@ -133,8 +151,8 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Frontend dev server origins allowed for CSRF (session auth is cookie based).
-CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get(
-    'DJANGO_CSRF_TRUSTED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if o]
+CSRF_TRUSTED_ORIGINS = _csv(
+    'DJANGO_CSRF_TRUSTED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
@@ -155,6 +173,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],
     'DEFAULT_THROTTLE_RATES': {
         'auth': os.environ.get('AUTH_THROTTLE_RATE', '30/min'),
-        'report': '20/hour',
+        'announce': os.environ.get('ANNOUNCE_THROTTLE_RATE', '10/hour'),
+        'report': os.environ.get('REPORT_THROTTLE_RATE', '20/hour'),
     },
 }

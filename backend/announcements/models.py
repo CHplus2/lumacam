@@ -39,7 +39,10 @@ class Announcement(models.Model):
     title = models.CharField(max_length=120)
     description = models.TextField(max_length=3000)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name='announcements')
-    publisher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='announcements')
+    # Posting does not require an account; publisher is set only when an admin posts.
+    publisher = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                  on_delete=models.SET_NULL, related_name='announcements')
+    publisher_name = models.CharField(max_length=80, default='')
     image = models.ImageField(upload_to=announcement_image_path, blank=True)
     contact_method = models.CharField(max_length=10, choices=ContactMethod.choices)
     contact_info = models.CharField(max_length=254)
@@ -71,7 +74,8 @@ class Report(models.Model):
         DISMISSED = 'dismissed', 'Dismissed'
 
     announcement = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name='reports')
-    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reports')
+    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                 on_delete=models.SET_NULL, related_name='reports')
     reason = models.CharField(max_length=500)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
