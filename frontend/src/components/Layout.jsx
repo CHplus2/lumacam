@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Aperture, Bell, Compass, House, Plus } from 'lucide-react'
+import { Aperture, Bell, Compass, House, LayoutGrid, Plus } from 'lucide-react'
 
 function Logo() {
   return (
@@ -48,6 +48,7 @@ export default function Layout() {
           <Logo />
           <nav className="nav-desktop" aria-label="Main">
             <NavLink to="/" end className={link}>Home</NavLink>
+            <NavLink to="/categories" className={link}>Categories</NavLink>
             <NavLink to="/explore" className={link}>Explore</NavLink>
           </nav>
           <div className="header-actions">
@@ -65,9 +66,12 @@ export default function Layout() {
 
       <nav className="nav-mobile" aria-label="Mobile">
         <NavLink to="/" end className={link}><House size={22} /><span>Home</span></NavLink>
+        <NavLink to="/categories" className={link}><LayoutGrid size={22} /><span>Categories</span></NavLink>
         <NavLink to="/explore" className={link}><Compass size={22} /><span>Explore</span></NavLink>
-        <NavLink to="/create" className="nav-create" aria-label="Create announcement"><Plus size={28} strokeWidth={2.6} /></NavLink>
       </nav>
+      {pathname !== '/create' && (
+        <Link to="/create" className="fab" aria-label="Create announcement"><Plus size={28} strokeWidth={2.6} /></Link>
+      )}
     </div>
   )
 }
