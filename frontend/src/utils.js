@@ -27,6 +27,7 @@ export const ICONS = {
 }
 
 export const CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
+export const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue' }
 
 export const CONTACT_METHODS = [
   { value: 'whatsapp', label: 'WhatsApp', placeholder: 'Phone number with country code, e.g. 60123456789' },

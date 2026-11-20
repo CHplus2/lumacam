@@ -4,62 +4,15 @@ import { ImagePlus, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { EmptyState, ErrorBox, Spinner } from '../components/ui'
-import { CATEGORY_COLORS, CONTACT_METHODS, ICONS } from '../utils'
+import { CONTACT_METHODS, emptyCategory } from '../utils'
+import { CategoryFields, Field } from '../components/fields'
 import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
 const NEW_CATEGORY = '__new__'
 const MAX_PICK_MB = 20 // larger photos are downsized before upload
-const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue' }
 const empty = {
   publisher_name: '', title: '', category: '', description: '', contact_method: 'whatsapp',
   contact_info: '', external_url: '', expires_at: '',
-}
-
-function Field({ label, error, hint, children, htmlFor }) {
-  return (
-    <div className={`field ${error ? 'has-error' : ''}`}>
-      <label htmlFor={htmlFor}>{label}</label>
-      {children}
-      {hint && !error && <small className="muted">{hint}</small>}
-      {error && <small className="field-error">{error}</small>}
-    </div>
-  )
-}
-
-function NewCategoryFields({ value, onChange, errors }) {
-  const set = (k, v) => onChange({ ...value, [k]: v })
-  return (
-    <div className="new-cat">
-      <Field label="New category name" htmlFor="cat_name" error={errors.name}>
-        <input id="cat_name" value={value.name} maxLength={40} onChange={(e) => set('name', e.target.value)}
-          placeholder="e.g. Sports & Fitness" />
-      </Field>
-      <Field label="Short description (optional)" htmlFor="cat_desc" error={errors.description}>
-        <input id="cat_desc" value={value.description} maxLength={200} onChange={(e) => set('description', e.target.value)} />
-      </Field>
-      <div className="field">
-        <span className="label">Icon</span>
-        <div className="icon-picker" role="radiogroup" aria-label="Category icon">
-          {Object.entries(ICONS).map(([key, Icon]) => (
-            <button type="button" key={key} role="radio" aria-checked={value.icon === key} aria-label={key}
-              className={`icon-choice tone-${value.color} ${value.icon === key ? 'selected' : ''}`} onClick={() => set('icon', key)}>
-              <Icon size={18} />
-            </button>
-          ))}
-        </div>
-        {errors.icon && <small className="field-error">{errors.icon}</small>}
-      </div>
-      <div className="field">
-        <span className="label">Colour</span>
-        <div className="row" role="radiogroup" aria-label="Category colour">
-          {CATEGORY_COLORS.map((c) => (
-            <button type="button" key={c} role="radio" aria-checked={value.color === c} aria-label={c}
-              className={`swatch tone-${c} ${value.color === c ? 'selected' : ''}`} onClick={() => set('color', c)} />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export default function AnnouncementForm() {
@@ -68,7 +21,8 @@ export default function AnnouncementForm() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { categories, loading: catLoading } = useCategories()
-  const [form, setForm] = useState(() => ({ ...empty, category: params.get('new_category') ? NEW_CATEGORY : '' }))
+  // ?category=<id> preselects a category (e.g. from an empty category page).
+  const [form, setForm] = useState(() => ({ ...empty, category: params.get('category') || '' }))
   const [newCat, setNewCat] = useState(emptyCategory)
   const [catErrors, setCatErrors] = useState({})
   // Remember a category created on an earlier (failed) submit so we don't create it twice.
@@ -220,7 +174,7 @@ export default function AnnouncementForm() {
           <option value={NEW_CATEGORY}>+ Create a new category</option>
         </select>
       </Field>
-      {form.category === NEW_CATEGORY && <NewCategoryFields value={newCat} onChange={setNewCat} errors={catErrors} />}
+      {form.category === NEW_CATEGORY && <div className="new-cat"><CategoryFields value={newCat} onChange={setNewCat} errors={catErrors} /></div>}
 
       <Field label="Description" htmlFor="description" error={fields.description} hint={`${form.description.length}/3000`}>
         <textarea id="description" rows={6} value={form.description} onChange={set('description')} maxLength={3000} required

@@ -43,7 +43,7 @@ export default function Home() {
       <section>
         <div className="section-head">
           <h2>Explore categories</h2>
-          <Link to="/create?new_category=1" className="link-more"><FolderPlus size={16} /> Create a category</Link>
+          <Link to="/categories/new" className="link-more"><FolderPlus size={16} /> Create a category</Link>
         </div>
         <ErrorBox message={catError} onRetry={reload} />
         {catLoading ? <Spinner /> : (

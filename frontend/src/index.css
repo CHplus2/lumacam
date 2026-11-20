@@ -154,11 +154,13 @@ label { font-weight: 600; font-size: 0.9rem; }
 .status-rejected { background: #ffe9ee; color: #be123c; }
 
 /* Listing */
-.page-head { display: flex; gap: 16px; align-items: center; padding: 22px; border-radius: 20px; background: var(--tone-bg, #fff); border: 1px solid var(--border); }
+.page-head { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 22px; border-radius: 20px; background: var(--tone-bg, #fff); border: 1px solid var(--border); }
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
 .chip { flex: none; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--text); font: inherit; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
 .chip:hover { text-decoration: none; background: #f3f4f8; }
 .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.chip-add { display: inline-flex; align-items: center; gap: 4px; border-style: dashed; color: var(--primary); }
+.cat-preview { max-width: 320px; pointer-events: none; }
 .toolbar { display: flex; gap: 12px; }
 .toolbar select { width: auto; min-width: 160px; }
 

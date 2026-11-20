@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Search, X } from 'lucide-react'
+import { Plus, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
@@ -20,7 +20,9 @@ export default function Listing() {
   const [q, setQ] = useState(initialQ)
   const debouncedQ = useDebounced(q)
   const ordering = params.get('ordering') || 'newest'
-  const { categories } = useCategories()
+  const { categories, reload: reloadCategories } = useCategories()
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
   const category = categories.find((c) => c.slug === slug)
 
   const [items, setItems] = useState([])
@@ -73,23 +75,43 @@ export default function Listing() {
     setParams(next, { replace: true })
   }
 
+  const deleteCategory = async () => {
+    const note = items.length ? ' Its announcements will move to "Other Announcements".' : ''
+    if (!window.confirm(`Delete the category "${category.name}"?${note}`)) return
+    setDeleting(true); setDeleteError('')
+    try {
+      await api.delete(`/categories/${category.id}/`)
+      reloadCategories()
+      navigate('/explore', { replace: true })
+    } catch (e) {
+      setDeleteError(parseError(e).message)
+    } finally { setDeleting(false) }
+  }
+
   const Icon = category ? ICONS[category.icon] : null
 
   return (
     <>
       <div className={`page-head ${category ? `tone-${category.color}` : ''}`}>
         {Icon && <span className="cat-icon"><Icon size={26} /></span>}
-        <div>
+        <div className="grow">
           <h1>{category ? category.name : 'Explore all announcements'}</h1>
           <p className="muted">{category ? category.description : 'Browse everything shared by your campus community.'}</p>
         </div>
+        {category && !category.is_builtin && (
+          <button className="btn btn-sm btn-danger" onClick={deleteCategory} disabled={deleting}>
+            <Trash2 size={15} /> {deleting ? 'Deleting...' : 'Delete category'}
+          </button>
+        )}
       </div>
+      <ErrorBox message={deleteError} />
 
       <div className="chips" role="tablist" aria-label="Categories">
         <Link to="/explore" className={`chip ${!slug ? 'active' : ''}`}>All</Link>
         {categories.map((c) => (
           <Link key={c.id} to={`/category/${c.slug}`} className={`chip ${slug === c.slug ? 'active' : ''}`}>{c.name}</Link>
         ))}
+        <Link to="/categories/new" className="chip chip-add"><Plus size={14} /> New category</Link>
       </div>
 
       <div className="toolbar">
@@ -112,7 +134,7 @@ export default function Listing() {
           action={
             <div className="row">
               <button className="btn" onClick={() => navigate('/explore')}>Browse all categories</button>
-              <Link to="/create" className="btn btn-primary">Create announcement</Link>
+              <Link to={category ? `/create?category=${category.id}` : '/create'} className="btn btn-primary">Create announcement</Link>
             </div>
           }
         />

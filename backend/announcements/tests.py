@@ -204,6 +204,26 @@ class CategoryTests(BaseCase):
         self.client.post('/api/announcements/', self.payload(category=r.data['id']))
         self.assertEqual(self.public_titles('/api/announcements/?category=sports-fitness'), ['Fresh cookies'])
 
+    def test_builtin_flag(self):
+        flags = {c['slug']: c['is_builtin'] for c in self.client.get('/api/categories/').data}
+        self.assertTrue(all(flags.values()))
+        self.assertFalse(self.client.post('/api/categories/', self.new).data['is_builtin'])
+
+    def test_delete_user_category_moves_posts_to_other(self):
+        cat_id = self.client.post('/api/categories/', self.new).data['id']
+        self.client.post('/api/announcements/', self.payload(category=cat_id))
+        r = self.client.delete(f'/api/categories/{cat_id}/')
+        self.assertEqual((r.status_code, r.data['moved_announcements'], r.data['moved_to']), (200, 1, 'other'))
+        self.assertNotIn('sports-fitness', [c['slug'] for c in self.client.get('/api/categories/').data])
+        self.assertEqual(self.public_titles('/api/announcements/?category=other'), ['Fresh cookies'])
+        self.assertEqual(self.client.delete(f'/api/categories/{cat_id}/').status_code, 404)
+
+    def test_builtin_categories_cannot_be_deleted(self):
+        for slug in ('food-drinks', 'other'):
+            cat = Category.objects.get(slug=slug)
+            self.assertEqual(self.client.delete(f'/api/categories/{cat.id}/').status_code, 400)
+        self.assertEqual(Category.objects.count(), 6)
+
     def test_validation(self):
         self.assertEqual(self.client.post('/api/categories/', {**self.new, 'name': 'food & DRINKS'}).status_code, 400)
         self.assertEqual(self.client.post('/api/categories/', {**self.new, 'icon': 'skull'}).status_code, 400)

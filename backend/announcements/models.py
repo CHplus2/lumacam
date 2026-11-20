@@ -3,6 +3,12 @@ from django.db import models
 from django.utils import timezone
 
 
+# The six categories from the original brief. They cannot be deleted from the
+# app; "other" is also where posts go when their category is deleted.
+BUILTIN_CATEGORY_SLUGS = frozenset({'food-drinks', 'marketplace', 'events', 'surveys', 'opportunities', 'other'})
+FALLBACK_CATEGORY_SLUG = 'other'
+
+
 class Category(models.Model):
     name = models.CharField(max_length=60, unique=True)
     slug = models.SlugField(max_length=60, unique=True)
@@ -20,6 +26,10 @@ class Category(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_builtin(self):
+        return self.slug in BUILTIN_CATEGORY_SLUGS
 
 
 def announcement_image_path(instance, filename):

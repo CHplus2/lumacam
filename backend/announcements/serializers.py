@@ -24,10 +24,11 @@ CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
 
 class CategorySerializer(serializers.ModelSerializer):
     announcement_count = serializers.IntegerField(read_only=True, required=False)
+    is_builtin = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Category
-        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'announcement_count')
+        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'is_builtin', 'announcement_count')
         read_only_fields = ('slug',)
         extra_kwargs = {'name': {'validators': []}}  # uniqueness checked case-insensitively below
 

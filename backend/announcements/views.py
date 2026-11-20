@@ -1,11 +1,12 @@
 from django.db.models import Count, F, Q
 from django.http import Http404
 from django.utils import timezone
-from rest_framework import generics
+from rest_framework import generics, status
+from rest_framework.response import Response
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 
-from .models import Announcement, Category
+from .models import FALLBACK_CATEGORY_SLUG, Announcement, Category
 from .serializers import AnnouncementSerializer, CategorySerializer
 
 ORDERINGS = {
@@ -48,6 +49,29 @@ class CategoryListView(generics.ListCreateAPIView):
                 .annotate(announcement_count=Count('announcements', filter=live))
                 .order_by('sort_order', 'name'))
 
+
+
+class CategoryDetailView(generics.RetrieveDestroyAPIView):
+    """Anyone can delete a category they created (the six built-in ones are protected).
+
+    Its announcements are not lost: they move to "Other Announcements".
+    """
+    serializer_class = CategorySerializer
+    permission_classes = [AllowAny]
+    queryset = Category.objects.all()
+    throttle_scope = 'modify'
+
+    def get_throttles(self):
+        return [] if self.request.method in ('GET', 'HEAD', 'OPTIONS') else super().get_throttles()
+
+    def destroy(self, request, *args, **kwargs):
+        cat = self.get_object()
+        if cat.is_builtin:
+            return Response({'detail': 'Built-in categories cannot be deleted.'}, status=status.HTTP_400_BAD_REQUEST)
+        fallback = Category.objects.get(slug=FALLBACK_CATEGORY_SLUG)
+        moved = cat.announcements.update(category=fallback)
+        cat.delete()
+        return Response({'moved_announcements': moved, 'moved_to': fallback.slug}, status=status.HTTP_200_OK)
 
 
 class AnnouncementListCreateView(generics.ListCreateAPIView):

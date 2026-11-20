@@ -4,6 +4,7 @@ import Home from './pages/Home'
 import Listing from './pages/Listing'
 import Detail from './pages/Detail'
 import AnnouncementForm from './pages/AnnouncementForm'
+import CategoryForm from './pages/CategoryForm'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="announcements/:id" element={<Detail />} />
         <Route path="announcements/:id/edit" element={<AnnouncementForm />} />
         <Route path="create" element={<AnnouncementForm />} />
+        <Route path="categories/new" element={<CategoryForm />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
