@@ -119,6 +119,11 @@ label { font-weight: 600; font-size: 0.9rem; }
 .cat-card.cat-card-new .cat-icon { color: var(--primary); }
 .cat-card.cat-card-new:hover { border-color: var(--primary); }
 .fab { display: none; }
+.cat-wrap { position: relative; display: flex; }
+.cat-wrap > .cat-card { flex: 1; }
+.cat-delete { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--muted); display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow); transition: color 0.15s, background 0.15s, border-color 0.15s; }
+.cat-delete:hover, .cat-delete:focus-visible { color: var(--danger); background: #fef2f2; border-color: #fecaca; }
+.cat-delete:disabled { opacity: 0.5; cursor: wait; }
 
 /* Hero */
 .hero { background: linear-gradient(135deg, #eef0ff 0%, #f6f0ff 60%, #fff1f5 100%); border: 1px solid var(--border); border-radius: 24px; padding: 44px 32px; display: flex; flex-direction: column; gap: 12px; }
