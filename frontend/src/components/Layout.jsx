@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import {
-  Aperture, Bell, Compass, House, LogIn, LogOut, Plus, ShieldCheck,
-} from 'lucide-react'
-import { useAuth } from '../auth'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Aperture, Bell, Compass, House, Plus } from 'lucide-react'
 
 function Logo() {
   return (
@@ -38,9 +35,7 @@ function Notifications() {
 }
 
 export default function Layout() {
-  const { user, isAdmin, loading, logout } = useAuth()
   const { pathname } = useLocation()
-  const navigate = useNavigate()
 
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
 
@@ -54,18 +49,10 @@ export default function Layout() {
           <nav className="nav-desktop" aria-label="Main">
             <NavLink to="/" end className={link}>Home</NavLink>
             <NavLink to="/explore" className={link}>Explore</NavLink>
-            <NavLink to="/create" className={link}>Create Announcement</NavLink>
-            {isAdmin && <NavLink to="/admin" className={link}>Admin</NavLink>}
           </nav>
           <div className="header-actions">
             <Notifications />
-            {!loading && (isAdmin ? (
-              <button className="btn btn-sm" onClick={async () => { await logout(); navigate('/') }}>
-                <LogOut size={16} /> Log out
-              </button>
-            ) : (
-              <Link to="/login" className="btn btn-sm"><LogIn size={16} /> Admin login</Link>
-            ))}
+            <Link to="/create" className="btn btn-primary btn-sm header-create"><Plus size={16} /> Create Announcement</Link>
           </div>
         </div>
       </header>
@@ -80,9 +67,6 @@ export default function Layout() {
         <NavLink to="/" end className={link}><House size={22} /><span>Home</span></NavLink>
         <NavLink to="/explore" className={link}><Compass size={22} /><span>Explore</span></NavLink>
         <NavLink to="/create" className="nav-create" aria-label="Create announcement"><Plus size={28} strokeWidth={2.6} /></NavLink>
-        <NavLink to={isAdmin ? '/admin' : '/login'} className={link}>
-          <ShieldCheck size={22} /><span>Admin</span>
-        </NavLink>
       </nav>
     </div>
   )

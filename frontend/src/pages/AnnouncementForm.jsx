@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ImagePlus, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
-import { useAuth } from '../auth'
-import { ErrorBox, Spinner } from '../components/ui'
+import { EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { CATEGORY_COLORS, CONTACT_METHODS, ICONS } from '../utils'
 import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
@@ -14,6 +13,17 @@ const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue' }
 const empty = {
   publisher_name: '', title: '', category: '', description: '', contact_method: 'whatsapp',
   contact_info: '', external_url: '', expires_at: '',
+}
+
+function Field({ label, error, hint, children, htmlFor }) {
+  return (
+    <div className={`field ${error ? 'has-error' : ''}`}>
+      <label htmlFor={htmlFor}>{label}</label>
+      {children}
+      {hint && !error && <small className="muted">{hint}</small>}
+      {error && <small className="field-error">{error}</small>}
+    </div>
+  )
 }
 
 function NewCategoryFields({ value, onChange, errors }) {
@@ -48,39 +58,48 @@ function NewCategoryFields({ value, onChange, errors }) {
           ))}
         </div>
       </div>
-      <small className="muted">New categories appear for everyone once a moderator approves them.</small>
-    </div>
-  )
-}
-
-function Field({ label, error, hint, children, htmlFor }) {
-  return (
-    <div className={`field ${error ? 'has-error' : ''}`}>
-      <label htmlFor={htmlFor}>{label}</label>
-      {children}
-      {hint && !error && <small className="muted">{hint}</small>}
-      {error && <small className="field-error">{error}</small>}
     </div>
   )
 }
 
 export default function AnnouncementForm() {
+  const { id } = useParams()
+  const editing = Boolean(id)
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const { isAdmin } = useAuth()
   const { categories, loading: catLoading } = useCategories()
   const [form, setForm] = useState(() => ({ ...empty, category: params.get('new_category') ? NEW_CATEGORY : '' }))
   const [newCat, setNewCat] = useState(emptyCategory)
   const [catErrors, setCatErrors] = useState({})
   // Remember a category created on an earlier (failed) submit so we don't create it twice.
   const [createdCat, setCreatedCat] = useState(null)
-  const [preparing, setPreparing] = useState(false)
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
+  const [existingImage, setExistingImage] = useState(null)
+  const [removeImage, setRemoveImage] = useState(false)
+  const [preparing, setPreparing] = useState(false)
+  const [loading, setLoading] = useState(editing)
+  const [notFound, setNotFound] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fields, setFields] = useState({})
   const [success, setSuccess] = useState(null)
+
+  // Load the post being edited.
+  useEffect(() => {
+    if (!editing) return
+    api.get(`/announcements/${id}/`)
+      .then(({ data }) => {
+        setForm({
+          publisher_name: data.publisher_name, title: data.title, category: String(data.category),
+          description: data.description, contact_method: data.contact_method, contact_info: data.contact_info,
+          external_url: data.external_url || '', expires_at: data.expires_at || '',
+        })
+        setExistingImage(data.image_url)
+      })
+      .catch((e) => (e.response?.status === 404 ? setNotFound(true) : setError(parseError(e).message)))
+      .finally(() => setLoading(false))
+  }, [id, editing])
 
   useEffect(() => {
     if (!file) { setPreview(null); return undefined }
@@ -96,7 +115,7 @@ export default function AnnouncementForm() {
     const input = e.target
     const f = input.files?.[0]
     setFields((x) => ({ ...x, image: undefined }))
-    if (!f) return setFile(null)
+    if (!f) return
     const fail = (msg) => { setFields((x) => ({ ...x, image: msg })); input.value = '' }
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) return fail('Only JPEG, PNG or WebP images are allowed.')
     if (f.size > MAX_PICK_MB * 1024 * 1024) return fail(`Image must be ${MAX_PICK_MB}MB or smaller.`)
@@ -104,10 +123,17 @@ export default function AnnouncementForm() {
     try {
       const small = await shrinkImage(f)
       if (small.size > MAX_UPLOAD_BYTES) return fail('This image is too large even after resizing. Try a smaller one.')
-      setFile(small)
+      setFile(small); setRemoveImage(false)
     } catch {
       fail('Could not read this image. Try a different file.')
     } finally { setPreparing(false) }
+  }
+
+  const clearImage = () => {
+    setFile(null)
+    if (existingImage) setRemoveImage(true)
+    const input = document.getElementById('image')
+    if (input) input.value = ''
   }
 
   const ensureCategory = async () => {
@@ -132,12 +158,17 @@ export default function AnnouncementForm() {
       const categoryId = await ensureCategory()
       const body = new FormData()
       Object.entries({ ...form, category: categoryId }).forEach(([k, v]) => {
-        if ((k === 'expires_at' || k === 'external_url') && !v) return
+        // On create, skip empty optional fields; on edit, send them so they can be cleared.
+        if (!editing && (k === 'expires_at' || k === 'external_url') && !v) return
         body.append(k, v)
       })
       if (file) body.append('image', file)
-      const { data } = await api.post('/announcements/', body)
-      setSuccess(data)
+      else if (removeImage) body.append('remove_image', 'true')
+      const { data } = editing
+        ? await api.patch(`/announcements/${id}/`, body)
+        : await api.post('/announcements/', body)
+      if (editing) navigate(`/announcements/${data.id}`, { replace: true })
+      else setSuccess(data)
     } catch (err) {
       const parsed = err.parsed || parseError(err)
       setError(err.parsed ? `New category: ${parsed.message}` : parsed.message)
@@ -146,20 +177,17 @@ export default function AnnouncementForm() {
     } finally { setBusy(false) }
   }
 
-  if (catLoading) return <Spinner />
+  if (loading || catLoading) return <Spinner />
+  if (notFound) return <EmptyState title="Announcement not found" text="It may have been deleted."
+    action={<Link to="/explore" className="btn btn-primary">Browse announcements</Link>} />
 
   if (success) {
-    const live = success.status === 'approved'
     return (
       <div className="card center-card">
-        <h1>Announcement submitted</h1>
-        <p className="muted">
-          {live
-            ? 'Your announcement is live.'
-            : 'Thanks! Your announcement is pending approval and will appear for everyone once a moderator approves it.'}
-        </p>
+        <h1>Your announcement is live</h1>
+        <p className="muted">Everyone can see it now. You can edit or delete it from its page at any time.</p>
         <div className="row">
-          <Link to="/explore" className="btn btn-primary">Browse announcements</Link>
+          <Link to={`/announcements/${success.id}`} className="btn btn-primary">View announcement</Link>
           <button className="btn" onClick={() => {
             setSuccess(null); setForm(empty); setFile(null); setNewCat(emptyCategory); setCreatedCat(null)
           }}>Post another</button>
@@ -168,13 +196,13 @@ export default function AnnouncementForm() {
     )
   }
 
-  const shownImage = preview
+  const shownImage = preview || (removeImage ? null : existingImage)
   const today = new Date().toISOString().slice(0, 10)
 
   return (
     <form className="card form" onSubmit={submit} noValidate>
-      <h1>Create announcement</h1>
-      {!isAdmin && <p className="muted">No account needed. A moderator reviews every post before it goes live.</p>}
+      <h1>{editing ? 'Edit announcement' : 'Create announcement'}</h1>
+      {!editing && <p className="muted">No account needed. Your post appears as soon as you submit it.</p>}
       <ErrorBox message={error} />
 
       <Field label="Your name" htmlFor="publisher_name" error={fields.publisher_name} hint="Shown as the publisher">
@@ -203,8 +231,7 @@ export default function AnnouncementForm() {
         {shownImage ? (
           <div className="img-preview">
             <img src={shownImage} alt="Selected" />
-            <button type="button" className="icon-btn" aria-label="Remove image"
-              onClick={() => setFile(null)}><X size={16} /></button>
+            <button type="button" className="icon-btn" aria-label="Remove image" onClick={clearImage}><X size={16} /></button>
           </div>
         ) : (
           <label className="upload" htmlFor="image"><ImagePlus size={22} /> Choose an image</label>
@@ -234,7 +261,9 @@ export default function AnnouncementForm() {
       </div>
 
       <div className="row form-actions">
-        <button className="btn btn-primary" disabled={busy || preparing}>{busy ? 'Submitting...' : 'Submit for approval'}</button>
+        <button className="btn btn-primary" disabled={busy || preparing}>
+          {busy ? (editing ? 'Saving...' : 'Posting...') : (editing ? 'Save changes' : 'Post announcement')}
+        </button>
         <button type="button" className="btn" onClick={() => navigate(-1)}>Cancel</button>
       </div>
     </form>

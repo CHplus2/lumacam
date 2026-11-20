@@ -1,4 +1,5 @@
 import io
+import json
 from datetime import timedelta
 
 from django.core.cache import cache
@@ -8,31 +9,21 @@ from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APIClient, APITestCase
 
-from accounts.models import User
-from announcements.models import Announcement, Category, Report
-
-PW = 'Str0ng-Pass-123'
-MEDIA = '/tmp/lumacam-test-media'
+from announcements.models import Announcement, Category, StoredFile
 
 
-def image_file(fmt='PNG', size=(20, 20), name='pic.png'):
+def image_file(fmt='PNG', size=(20, 20), name='pic.png', color='red'):
     buf = io.BytesIO()
-    Image.new('RGB', size, 'red').save(buf, fmt)
+    Image.new('RGB', size, color).save(buf, fmt)
     return SimpleUploadedFile(name, buf.getvalue(), content_type='image/png')
 
 
-@override_settings(MEDIA_ROOT=MEDIA)
 class BaseCase(APITestCase):
     def setUp(self):
         cache.clear()  # reset rate-limit counters
         self.cat = Category.objects.get(slug='food-drinks')
         self.other_cat = Category.objects.get(slug='events')
-        self.admin = User.objects.create_user('boss', 'boss@x.com', PW, role='admin')
-
-    def admin_client(self):
-        c = APIClient()
-        c.force_login(self.admin)
-        return c
+        self.client = APIClient()
 
     def make(self, status='approved', **kw):
         data = dict(title='Nasi lemak', description='Delicious lunch pickup', category=self.cat,
@@ -47,306 +38,212 @@ class BaseCase(APITestCase):
         base.update(kw)
         return base
 
+    def public_titles(self, url='/api/announcements/'):
+        return [a['title'] for a in self.client.get(url).data['results']]
 
-class AuthTests(BaseCase):
-    def test_admin_login_logout(self):
-        c = APIClient()
-        self.assertEqual(c.post('/api/auth/login/', {'username': 'boss', 'password': 'wrong'}).status_code, 400)
-        r = c.post('/api/auth/login/', {'username': 'boss', 'password': PW})
-        self.assertEqual((r.status_code, r.data['role']), (200, 'admin'))
-        self.assertEqual(c.get('/api/auth/me/').status_code, 200)
-        self.assertEqual(c.post('/api/auth/logout/').status_code, 204)
-        self.assertEqual(c.get('/api/auth/me/').status_code, 403)
 
-    def test_registration_is_gone(self):
-        self.assertEqual(APIClient().post('/api/auth/register/', {'username': 'x'}).status_code, 404)
+class NoLoginTests(BaseCase):
+    def test_auth_endpoints_are_gone(self):
+        for url in ('/api/auth/login/', '/api/auth/me/', '/api/admin/stats/'):
+            self.assertEqual(self.client.get(url).status_code, 404, url)
 
-    def test_password_hashed(self):
-        self.assertTrue(self.admin.password.startswith('pbkdf2'))
+    def test_no_csrf_needed_for_writes(self):
+        c = APIClient(enforce_csrf_checks=True)
+        self.assertEqual(c.post('/api/announcements/', self.payload()).status_code, 201)
 
 
 class CreateTests(BaseCase):
-    def test_anonymous_can_post_and_it_is_pending_and_hidden(self):
-        c = APIClient()
-        r = c.post('/api/announcements/', self.payload(status='approved'), format='multipart')
+    def test_post_is_live_immediately(self):
+        r = self.client.post('/api/announcements/', self.payload(), format='multipart')
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertEqual((r.data['status'], r.data['publisher_name']), ('pending', 'Bob'))
-        self.assertEqual(c.get('/api/announcements/').data['count'], 0)
-        self.assertIsNone(Announcement.objects.get().publisher)
+        self.assertEqual(self.public_titles(), ['Fresh cookies'])
 
     def test_name_required(self):
-        r = APIClient().post('/api/announcements/', self.payload(publisher_name=' '))
+        r = self.client.post('/api/announcements/', self.payload(publisher_name=' '))
         self.assertEqual(r.status_code, 400)
         self.assertIn('publisher_name', r.data)
 
-    def test_admin_post_is_auto_approved(self):
-        r = self.admin_client().post('/api/announcements/', self.payload(), format='multipart')
-        self.assertEqual(r.data['status'], 'approved')
-
     def test_post_rate_limit(self):
-        c = APIClient()
-        codes = [c.post('/api/announcements/', self.payload()).status_code for _ in range(11)]
-        self.assertEqual(codes[:10], [201] * 10)
-        self.assertEqual(codes[10], 429)
-        self.assertEqual(c.get('/api/announcements/').status_code, 200)  # browsing unaffected
+        codes = [self.client.post('/api/announcements/', self.payload()).status_code for _ in range(11)]
+        self.assertEqual((codes[:10], codes[10]), ([201] * 10, 429))
+        self.assertEqual(self.client.get('/api/announcements/').status_code, 200)  # browsing unaffected
 
     def test_image_upload_validation(self):
-        c = APIClient()
-        ok = c.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        ok = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
         self.assertEqual(ok.status_code, 201, ok.data)
         self.assertTrue(ok.data['image_url'])
         fake = SimpleUploadedFile('x.png', b'not an image', content_type='image/png')
-        self.assertEqual(c.post('/api/announcements/', {**self.payload(), 'image': fake}, format='multipart').status_code, 400)
+        self.assertEqual(self.client.post('/api/announcements/', {**self.payload(), 'image': fake}, format='multipart').status_code, 400)
         gif = io.BytesIO(); Image.new('RGB', (5, 5)).save(gif, 'GIF')
         gif_f = SimpleUploadedFile('x.gif', gif.getvalue(), content_type='image/gif')
-        self.assertEqual(c.post('/api/announcements/', {**self.payload(), 'image': gif_f}, format='multipart').status_code, 400)
+        self.assertEqual(self.client.post('/api/announcements/', {**self.payload(), 'image': gif_f}, format='multipart').status_code, 400)
 
     @override_settings(MAX_IMAGE_BYTES=100)
     def test_image_too_large(self):
-        r = APIClient().post('/api/announcements/', {**self.payload(), 'image': image_file(size=(200, 200))}, format='multipart')
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file(size=(200, 200))}, format='multipart')
         self.assertEqual(r.status_code, 400)
 
     def test_contact_and_url_validation(self):
-        c = APIClient()
         P = self.payload
-        self.assertEqual(c.post('/api/announcements/', P(contact_method='email', contact_info='nope')).status_code, 400)
-        self.assertEqual(c.post('/api/announcements/', P(contact_method='whatsapp', contact_info='abc')).status_code, 400)
-        self.assertEqual(c.post('/api/announcements/', P(contact_method='link', contact_info='javascript:alert(1)')).status_code, 400)
-        self.assertEqual(c.post('/api/announcements/', P(external_url='javascript:alert(1)')).status_code, 400)
-        r = c.post('/api/announcements/', P(contact_method='whatsapp', contact_info='+60 12-345 6789'))
+        self.assertEqual(self.client.post('/api/announcements/', P(contact_method='email', contact_info='nope')).status_code, 400)
+        self.assertEqual(self.client.post('/api/announcements/', P(contact_method='whatsapp', contact_info='abc')).status_code, 400)
+        self.assertEqual(self.client.post('/api/announcements/', P(contact_method='link', contact_info='javascript:alert(1)')).status_code, 400)
+        self.assertEqual(self.client.post('/api/announcements/', P(external_url='javascript:alert(1)')).status_code, 400)
+        r = self.client.post('/api/announcements/', P(contact_method='whatsapp', contact_info='+60 12-345 6789'))
         self.assertEqual((r.status_code, r.data['contact_info']), (201, '60123456789'))
 
     def test_past_expiry_rejected(self):
-        r = APIClient().post('/api/announcements/', self.payload(expires_at=str(timezone.localdate() - timedelta(days=1))))
+        r = self.client.post('/api/announcements/', self.payload(expires_at=str(timezone.localdate() - timedelta(days=1))))
         self.assertEqual(r.status_code, 400)
 
-    def test_public_cannot_modify_or_delete(self):
+
+class EditDeleteTests(BaseCase):
+    def test_anyone_can_edit(self):
         ann = self.make()
-        c = APIClient()
-        self.assertEqual(c.patch(f'/api/announcements/{ann.id}/', {'title': 'Hacked'}).status_code, 405)
-        self.assertEqual(c.delete(f'/api/announcements/{ann.id}/').status_code, 405)
+        r = self.client.patch(f'/api/announcements/{ann.id}/', {'title': 'Updated title', 'category': self.other_cat.id})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(self.public_titles(f'/api/announcements/?category={self.other_cat.slug}'), ['Updated title'])
+
+    def test_edit_is_validated(self):
+        ann = self.make()
+        self.assertEqual(self.client.patch(f'/api/announcements/{ann.id}/', {'contact_info': 'not a phone'}).status_code, 400)
+        self.assertEqual(self.client.patch(f'/api/announcements/{ann.id}/', {'title': 'x'}).status_code, 400)
+
+    def test_edit_expired_post_keeps_old_expiry(self):
+        ann = self.make(expires_at=timezone.localdate() - timedelta(days=2))
+        r = self.client.patch(f'/api/announcements/{ann.id}/', {'title': 'Still editable'})
+        self.assertEqual(r.status_code, 200, r.data)
+
+    def test_replace_and_remove_image(self):
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        first = r.data['image_url']
+        r = self.client.patch(f"/api/announcements/{r.data['id']}/", {'image': image_file(color='blue')}, format='multipart')
+        self.assertNotEqual(r.data['image_url'], first)
+        self.assertEqual(StoredFile.objects.count(), 1)  # old image deleted
+        r = self.client.patch(f"/api/announcements/{r.data['id']}/", {'remove_image': 'true'}, format='multipart')
+        self.assertIsNone(r.data['image_url'])
+        self.assertEqual(StoredFile.objects.count(), 0)
+
+    def test_edit_without_file_keeps_image(self):
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        url = r.data['image_url']
+        r = self.client.patch(f"/api/announcements/{r.data['id']}/", {'title': 'New title'}, format='multipart')
+        self.assertEqual(r.data['image_url'], url)
+
+    def test_full_form_edit_can_clear_optional_fields(self):
+        ann = self.make(external_url='https://example.com', expires_at=timezone.localdate() + timedelta(days=3))
+        body = {'publisher_name': 'Alice', 'title': 'Nasi lemak', 'category': self.cat.id,
+                'description': 'Delicious lunch pickup', 'contact_method': 'whatsapp',
+                'contact_info': '60123456789', 'external_url': '', 'expires_at': ''}
+        r = self.client.patch(f'/api/announcements/{ann.id}/', body, format='multipart')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual((r.data['external_url'], r.data['expires_at']), ('', None))
+
+    def test_delete_hides_but_keeps_post(self):
+        ann = self.make()
+        self.assertEqual(self.client.delete(f'/api/announcements/{ann.id}/').status_code, 204)
+        self.assertEqual(self.public_titles(), [])
+        self.assertEqual(self.client.get(f'/api/announcements/{ann.id}/').status_code, 404)
+        ann.refresh_from_db()
+        self.assertEqual(ann.status, Announcement.Status.REMOVED)  # restorable in /django-admin/
+        self.assertEqual(self.client.patch(f'/api/announcements/{ann.id}/', {'title': 'Back again'}).status_code, 404)
+
+    def test_modify_rate_limit(self):
+        ann = self.make()
+        codes = [self.client.patch(f'/api/announcements/{ann.id}/', {'title': f'Title {i}'}).status_code for i in range(61)]
+        self.assertEqual((codes[:60], codes[60]), ([200] * 60, 429))
+        self.assertEqual(self.client.get(f'/api/announcements/{ann.id}/').status_code, 200)
 
 
 class BrowseTests(BaseCase):
-    def test_only_approved_and_unexpired_public(self):
+    def test_only_live_and_unexpired_listed(self):
         self.make(title='visible')
-        self.make(title='pending', status='pending')
-        self.make(title='rejected', status='rejected')
+        self.make(title='removed', status='removed')
         self.make(title='expired', expires_at=timezone.localdate() - timedelta(days=1))
-        r = APIClient().get('/api/announcements/')
-        self.assertEqual([a['title'] for a in r.data['results']], ['visible'])
+        self.assertEqual(self.public_titles(), ['visible'])
 
     def test_category_filter_search_and_ordering(self):
         a = self.make(title='Old pizza', category=self.cat)
-        b = self.make(title='Hack night', category=self.other_cat, description='coding event')
+        b = self.make(title='Hack night', category=self.other_cat, description='coding event', publisher_name='Zara')
         Announcement.objects.filter(pk=a.pk).update(created_at=timezone.now() - timedelta(days=3))
-        c = APIClient()
-        ids = lambda url: [x['id'] for x in c.get(url).data['results']]
+        ids = lambda url: [x['id'] for x in self.client.get(url).data['results']]
         self.assertEqual(ids(f'/api/announcements/?category={self.other_cat.slug}'), [b.id])
         self.assertEqual(ids('/api/announcements/?search=pizza'), [a.id])
         self.assertEqual(ids('/api/announcements/?search=CODING'), [b.id])
+        self.assertEqual(ids('/api/announcements/?search=zara'), [b.id])
         self.assertEqual(ids('/api/announcements/'), [b.id, a.id])
         self.assertEqual(ids('/api/announcements/?ordering=oldest'), [a.id, b.id])
 
     def test_category_counts(self):
-        self.make(); self.make(status='pending')
-        data = {c['slug']: c['announcement_count'] for c in APIClient().get('/api/categories/').data}
+        self.make(); self.make(status='removed')
+        data = {c['slug']: c['announcement_count'] for c in self.client.get('/api/categories/').data}
         self.assertEqual((data['food-drinks'], data['events'], len(data)), (1, 0, 6))
-
-    def test_detail_visibility(self):
-        pending = self.make(status='pending')
-        self.assertEqual(APIClient().get(f'/api/announcements/{pending.id}/').status_code, 404)
-        self.assertEqual(self.admin_client().get(f'/api/announcements/{pending.id}/').status_code, 200)
-        live = self.make()
-        self.assertEqual(APIClient().get(f'/api/announcements/{live.id}/').status_code, 200)
-
-
-class AdminTests(BaseCase):
-    def test_anonymous_blocked_from_admin_endpoints(self):
-        c = APIClient()
-        ann = self.make(status='pending')
-        for method, url in [('get', '/api/admin/stats/'), ('get', '/api/admin/announcements/'),
-                            ('post', f'/api/admin/announcements/{ann.id}/approve/'),
-                            ('delete', f'/api/admin/announcements/{ann.id}/'), ('get', '/api/admin/reports/')]:
-            self.assertIn(getattr(c, method)(url).status_code, (401, 403), url)
-        self.assertTrue(Announcement.objects.filter(pk=ann.id, status='pending').exists())
-
-    def test_non_admin_user_blocked(self):
-        user = User.objects.create_user('stu', 's@x.com', PW)
-        c = APIClient(); c.force_login(user)
-        self.assertEqual(c.get('/api/admin/stats/').status_code, 403)
-
-    def test_approve_makes_public_and_reject_hides(self):
-        ann = self.make(status='pending')
-        admin = self.admin_client()
-        self.assertEqual(APIClient().get('/api/announcements/').data['count'], 0)
-        self.assertEqual(admin.post(f'/api/admin/announcements/{ann.id}/approve/').data['status'], 'approved')
-        self.assertEqual(APIClient().get('/api/announcements/').data['count'], 1)
-        r = admin.post(f'/api/admin/announcements/{ann.id}/reject/', {'reason': 'Misleading'})
-        self.assertEqual((r.data['status'], r.data['rejection_reason']), ('rejected', 'Misleading'))
-        self.assertEqual(APIClient().get('/api/announcements/').data['count'], 0)
-
-    def test_stats_delete_and_filter(self):
-        self.make(status='pending'); self.make(); self.make(status='rejected')
-        ann = self.make()
-        admin = self.admin_client()
-        s = admin.get('/api/admin/stats/').data
-        self.assertEqual((s['total'], s['pending'], s['approved'], s['rejected']), (4, 1, 2, 1))
-        self.assertEqual(admin.get('/api/admin/announcements/?status=pending').data['count'], 1)
-        self.assertEqual(admin.delete(f'/api/admin/announcements/{ann.id}/').status_code, 204)
-        self.assertEqual(admin.get('/api/admin/stats/').data['total'], 3)
-
-
-class ReportTests(BaseCase):
-    def test_anonymous_report_flow(self):
-        ann = self.make()
-        r = APIClient().post(f'/api/announcements/{ann.id}/report/', {'reason': 'This is misleading'})
-        self.assertEqual(r.status_code, 201, r.data)
-        self.assertEqual(r.data['reporter_name'], 'Anonymous')
-        self.assertEqual(APIClient().post(f'/api/announcements/{ann.id}/report/', {'reason': 'x'}).status_code, 400)
-        admin = self.admin_client()
-        self.assertEqual(admin.get('/api/admin/stats/').data['open_reports'], 1)
-        rep = Report.objects.get()
-        self.assertEqual(admin.post(f'/api/admin/reports/{rep.id}/dismiss/').data['status'], 'dismissed')
-        self.assertEqual(admin.get('/api/admin/stats/').data['open_reports'], 0)
-
-    def test_cannot_report_unpublished(self):
-        ann = self.make(status='pending')
-        self.assertEqual(APIClient().post(f'/api/announcements/{ann.id}/report/', {'reason': 'whatever'}).status_code, 404)
-
-
-@override_settings(MEDIA_ROOT=MEDIA)
-class LiveFlowTests(LiveServerTestCase):
-    """Real HTTP + cookies + CSRF header, the way the browser (Axios) talks to the API."""
-
-    def setUp(self):
-        import http.cookiejar, json, urllib.request
-        cache.clear()
-        self.json, self.urllib = json, urllib.request
-        self.jar = http.cookiejar.CookieJar()
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
-
-    def call(self, method, path, body=None, csrf=True):
-        headers = {'Content-Type': 'application/json'}
-        token = next((c.value for c in self.jar if c.name == 'csrftoken'), None)
-        if csrf and token:
-            headers['X-CSRFToken'] = token
-        data = self.json.dumps(body).encode() if body is not None else None
-        req = self.urllib.Request(self.live_server_url + path, data=data, method=method, headers=headers)
-        try:
-            with self.opener.open(req) as r:
-                raw = r.read()
-                return r.status, (self.json.loads(raw) if raw else None)
-        except self.urllib.HTTPError as e:
-            raw = e.read()
-            return e.code, (self.json.loads(raw) if raw else None)
-
-    def test_public_post_then_admin_approves(self):
-        cat = Category.objects.get(slug='events')
-        User.objects.create_user('root', 'root@x.com', PW, role='admin')
-        payload = {'title': 'Hack night', 'description': 'Join us for a coding night.', 'category': cat.id,
-                   'publisher_name': 'Carol', 'contact_method': 'link', 'contact_info': 'https://example.com/signup'}
-
-        # Anonymous visitor posts with no cookies/CSRF at all.
-        status, ann = self.call('POST', '/api/announcements/', payload, csrf=False)
-        self.assertEqual((status, ann['status']), (201, 'pending'))
-        self.assertEqual(self.call('GET', '/api/announcements/')[1]['count'], 0)
-        self.assertEqual(self.call('POST', f'/api/admin/announcements/{ann["id"]}/approve/', csrf=False)[0], 403)
-
-        # Admin logs in (CSRF header required once authenticated) and approves.
-        self.call('GET', '/api/auth/csrf/')
-        self.assertEqual(self.call('POST', '/api/auth/login/', {'username': 'root', 'password': PW})[0], 200)
-        self.assertEqual(self.call('POST', f'/api/admin/announcements/{ann["id"]}/approve/', csrf=False)[0], 403)  # no CSRF token
-        self.assertEqual(self.call('POST', f'/api/admin/announcements/{ann["id"]}/approve/')[1]['status'], 'approved')
-        listing = self.call('GET', '/api/announcements/?category=events&search=hack')[1]
-        self.assertEqual([a['id'] for a in listing['results']], [ann['id']])
 
 
 class ImageStorageTests(BaseCase):
     def test_uploaded_image_is_stored_in_db_and_served(self):
-        from announcements.models import StoredFile
-        r = APIClient().post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(StoredFile.objects.count(), 1)
         url = r.data['image_url']
         self.assertTrue(url.startswith('/media/announcements/'))
         resp = self.client.get(url)
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp['Content-Type'], 'image/png')
+        self.assertEqual((resp.status_code, resp['Content-Type']), (200, 'image/png'))
         self.assertTrue(resp.content.startswith(b'\x89PNG'))
         self.assertEqual(self.client.get('/media/announcements/missing.png').status_code, 404)
-
-    def test_deleting_announcement_removes_image(self):
-        from announcements.models import StoredFile
-        r = APIClient().post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
-        self.admin_client().delete(f"/api/admin/announcements/{r.data['id']}/")
-        self.assertEqual(StoredFile.objects.count(), 0)
 
 
 class CategoryTests(BaseCase):
     new = {'name': 'Sports & Fitness', 'description': 'Games and gym buddies', 'icon': 'dumbbell', 'color': 'teal'}
 
-    def test_public_category_is_pending_and_hidden(self):
-        r = APIClient().post('/api/categories/', self.new)
-        self.assertEqual(r.status_code, 201, r.data)
-        self.assertEqual((r.data['slug'], r.data['is_approved']), ('sports-fitness', False))
-        slugs = [c['slug'] for c in APIClient().get('/api/categories/').data]
-        self.assertNotIn('sports-fitness', slugs)
-        self.assertEqual(len(slugs), 6)
-
-    def test_admin_category_is_live(self):
-        r = self.admin_client().post('/api/categories/', self.new)
-        self.assertTrue(r.data['is_approved'])
-        self.assertIn('sports-fitness', [c['slug'] for c in APIClient().get('/api/categories/').data])
+    def test_new_category_is_live_and_usable(self):
+        r = self.client.post('/api/categories/', self.new)
+        self.assertEqual((r.status_code, r.data['slug']), (201, 'sports-fitness'))
+        slugs = [c['slug'] for c in self.client.get('/api/categories/').data]
+        self.assertEqual((slugs[0], slugs[-2], slugs[-1]), ('food-drinks', 'sports-fitness', 'other'))
+        self.client.post('/api/announcements/', self.payload(category=r.data['id']))
+        self.assertEqual(self.public_titles('/api/announcements/?category=sports-fitness'), ['Fresh cookies'])
 
     def test_validation(self):
-        c = APIClient()
-        self.assertEqual(c.post('/api/categories/', {**self.new, 'name': 'food & DRINKS'}).status_code, 400)
-        self.assertEqual(c.post('/api/categories/', {**self.new, 'icon': 'skull'}).status_code, 400)
-        self.assertEqual(c.post('/api/categories/', {**self.new, 'color': 'black'}).status_code, 400)
-        self.assertEqual(c.post('/api/categories/', {**self.new, 'name': 'x'}).status_code, 400)
-
-    def test_order_keeps_other_last(self):
-        self.admin_client().post('/api/categories/', self.new)
-        slugs = [c['slug'] for c in APIClient().get('/api/categories/').data]
-        self.assertEqual((slugs[0], slugs[-2], slugs[-1]), ('food-drinks', 'sports-fitness', 'other'))
-
-    def test_post_in_new_category_and_approval_publishes_both(self):
-        cat_id = APIClient().post('/api/categories/', self.new).data['id']
-        ann = APIClient().post('/api/announcements/', self.payload(category=cat_id)).data
-        admin = self.admin_client()
-        self.assertEqual(admin.get('/api/admin/stats/').data['pending_categories'], 1)
-        admin.post(f"/api/admin/announcements/{ann['id']}/approve/")
-        self.assertTrue(Category.objects.get(pk=cat_id).is_approved)
-        r = APIClient().get('/api/announcements/?category=sports-fitness')
-        self.assertEqual([a['id'] for a in r.data['results']], [ann['id']])
-
-    def test_approved_post_hidden_while_category_pending(self):
-        cat = Category.objects.create(name='Hidden', slug='hidden', icon='tag', is_approved=False)
-        self.make(category=cat)
-        self.assertEqual(APIClient().get('/api/announcements/').data['count'], 0)
-
-    def test_admin_category_moderation(self):
-        cat_id = APIClient().post('/api/categories/', self.new).data['id']
-        c = APIClient()
-        self.assertIn(c.post(f'/api/admin/categories/{cat_id}/approve/').status_code, (401, 403))
-        self.assertIn(c.delete(f'/api/admin/categories/{cat_id}/').status_code, (401, 403))
-        admin = self.admin_client()
-        listed = {x['id']: x['is_approved'] for x in admin.get('/api/admin/categories/').data}
-        self.assertFalse(listed[cat_id])
-        self.assertTrue(admin.post(f'/api/admin/categories/{cat_id}/approve/').data['is_approved'])
-
-    def test_delete_moves_posts_to_other(self):
-        cat = Category.objects.create(name='Temp', slug='temp', icon='tag')
-        ann = self.make(category=cat)
-        admin = self.admin_client()
-        self.assertEqual(admin.delete(f'/api/admin/categories/{cat.id}/').status_code, 204)
-        ann.refresh_from_db()
-        self.assertEqual(ann.category.slug, 'other')
-        other = Category.objects.get(slug='other')
-        self.assertEqual(admin.delete(f'/api/admin/categories/{other.id}/').status_code, 400)
+        self.assertEqual(self.client.post('/api/categories/', {**self.new, 'name': 'food & DRINKS'}).status_code, 400)
+        self.assertEqual(self.client.post('/api/categories/', {**self.new, 'icon': 'skull'}).status_code, 400)
+        self.assertEqual(self.client.post('/api/categories/', {**self.new, 'color': 'black'}).status_code, 400)
+        self.assertEqual(self.client.post('/api/categories/', {**self.new, 'name': 'x'}).status_code, 400)
 
     def test_category_rate_limit(self):
-        c = APIClient()
-        codes = [c.post('/api/categories/', {**self.new, 'name': f'Cat {i}'}).status_code for i in range(11)]
+        codes = [self.client.post('/api/categories/', {**self.new, 'name': f'Cat {i}'}).status_code for i in range(11)]
         self.assertEqual((codes[:10], codes[10]), ([201] * 10, 429))
+
+
+class LiveFlowTests(LiveServerTestCase):
+    """Real HTTP requests, the way the browser talks to the API."""
+
+    def setUp(self):
+        import urllib.request
+        cache.clear()
+        self.urllib = urllib.request
+
+    def call(self, method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        req = self.urllib.Request(self.live_server_url + path, data=data, method=method,
+                                  headers={'Content-Type': 'application/json'})
+        try:
+            with self.urllib.urlopen(req) as r:
+                raw = r.read()
+                return r.status, (json.loads(raw) if raw else None)
+        except self.urllib.HTTPError as e:
+            raw = e.read()
+            return e.code, (json.loads(raw) if raw else None)
+
+    def test_post_edit_delete_without_login(self):
+        cat = Category.objects.get(slug='events')
+        payload = {'title': 'Hack night', 'description': 'Join us for a coding night.', 'category': cat.id,
+                   'publisher_name': 'Carol', 'contact_method': 'link', 'contact_info': 'https://example.com/signup'}
+        status, ann = self.call('POST', '/api/announcements/', payload)
+        self.assertEqual(status, 201, ann)
+        listing = self.call('GET', '/api/announcements/?category=events&search=hack')[1]
+        self.assertEqual([a['id'] for a in listing['results']], [ann['id']])
+        status, edited = self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Hack night v2'})
+        self.assertEqual((status, edited['title']), (200, 'Hack night v2'))
+        self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/")[0], 204)
+        self.assertEqual(self.call('GET', '/api/announcements/')[1]['count'], 0)

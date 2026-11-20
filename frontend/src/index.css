@@ -210,6 +210,7 @@ label { font-weight: 600; font-size: 0.9rem; }
   :root { --header-h: 58px; }
   .container { padding: 0 16px; }
   .nav-desktop { display: none; }
+  .header-create { display: none; }
   .main { padding-top: 18px; gap: 26px; padding-bottom: calc(var(--nav-h) + 28px); }
   .footer { display: none; }
   h1 { font-size: 1.45rem; }

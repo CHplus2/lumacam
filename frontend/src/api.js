@@ -1,14 +1,7 @@
 import axios from 'axios'
 
-// Session cookie auth; Django's CSRF cookie is echoed back in a header.
-const api = axios.create({
-  baseURL: '/api',
-  withCredentials: true,
-  xsrfCookieName: 'csrftoken',
-  xsrfHeaderName: 'X-CSRFToken',
-})
-
-export const ensureCsrf = () => api.get('/auth/csrf/')
+// The API has no accounts, so no cookies or CSRF tokens are needed.
+const api = axios.create({ baseURL: '/api' })
 
 /** Turn a DRF error response into { message, fields }. */
 export function parseError(err) {

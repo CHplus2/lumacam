@@ -10,8 +10,7 @@ class Category(models.Model):
     icon = models.CharField(max_length=40, help_text='Lucide icon identifier, e.g. "utensils"')
     color = models.CharField(max_length=20, default='blue', help_text='Theme colour key used by the frontend')
     sort_order = models.PositiveSmallIntegerField(default=50)
-    # Categories suggested by the public stay hidden until a moderator approves
-    # them (or approves the first announcement that uses them).
+    # Kept for a future moderation step; new categories are live immediately.
     is_approved = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
 
@@ -32,8 +31,11 @@ def announcement_image_path(instance, filename):
 class Announcement(models.Model):
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'
-        APPROVED = 'approved', 'Approved'
+        APPROVED = 'approved', 'Live'
         REJECTED = 'rejected', 'Rejected'
+        # "Delete" in the app hides a post instead of erasing it, so posts
+        # removed by mistake (or by a prankster) can be restored in /django-admin/.
+        REMOVED = 'removed', 'Removed'
 
     class ContactMethod(models.TextChoices):
         WHATSAPP = 'whatsapp', 'WhatsApp'
@@ -43,7 +45,7 @@ class Announcement(models.Model):
     title = models.CharField(max_length=120)
     description = models.TextField(max_length=3000)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name='announcements')
-    # Posting does not require an account; publisher is set only when an admin posts.
+    # Unused while the app has no accounts; kept for a future login system.
     publisher = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL, related_name='announcements')
     publisher_name = models.CharField(max_length=80, default='')
@@ -51,7 +53,7 @@ class Announcement(models.Model):
     contact_method = models.CharField(max_length=10, choices=ContactMethod.choices)
     contact_info = models.CharField(max_length=254)
     external_url = models.URLField(blank=True, help_text='Optional registration / Google Forms link')
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPROVED, db_index=True)
     rejection_reason = models.CharField(max_length=300, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -69,26 +71,6 @@ class Announcement(models.Model):
         super().delete(*args, **kwargs)
         if image:
             image.delete(save=False)
-
-
-class Report(models.Model):
-    class Status(models.TextChoices):
-        OPEN = 'open', 'Open'
-        RESOLVED = 'resolved', 'Resolved'
-        DISMISSED = 'dismissed', 'Dismissed'
-
-    announcement = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name='reports')
-    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
-                                 on_delete=models.SET_NULL, related_name='reports')
-    reason = models.CharField(max_length=500)
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f'Report #{self.pk} on {self.announcement_id}'
 
 
 class StoredFile(models.Model):

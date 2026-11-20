@@ -4,11 +4,10 @@ from django.conf import settings
 from django.core.validators import EmailValidator, URLValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
+from django.utils.text import slugify
 from rest_framework import serializers
 
-from django.utils.text import slugify
-
-from .models import Announcement, Category, Report
+from .models import Announcement, Category
 
 ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP'}
 ALLOWED_SCHEMES = ['http', 'https']
@@ -28,8 +27,8 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'is_approved', 'announcement_count')
-        read_only_fields = ('slug', 'is_approved')
+        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'announcement_count')
+        read_only_fields = ('slug',)
         extra_kwargs = {'name': {'validators': []}}  # uniqueness checked case-insensitively below
 
     def validate_name(self, value):
@@ -68,23 +67,20 @@ class AnnouncementSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
     category_detail = CategorySerializer(source='category', read_only=True)
     image = serializers.ImageField(write_only=True, required=False, allow_null=True)
+    remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
     image_url = serializers.SerializerMethodField()
-    open_reports = serializers.SerializerMethodField()
 
     class Meta:
         model = Announcement
         fields = (
             'id', 'title', 'description', 'category', 'category_detail', 'publisher_name',
-            'image', 'image_url', 'contact_method', 'contact_info', 'external_url',
-            'status', 'rejection_reason', 'created_at', 'updated_at', 'expires_at', 'open_reports',
+            'image', 'remove_image', 'image_url', 'contact_method', 'contact_info', 'external_url',
+            'created_at', 'updated_at', 'expires_at',
         )
-        read_only_fields = ('status', 'rejection_reason', 'created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at')
 
     def get_image_url(self, obj):
         return obj.image.url if obj.image else None
-
-    def get_open_reports(self, obj):
-        return getattr(obj, 'open_reports', None)
 
     # ---- validation ----
     def validate_publisher_name(self, value):
@@ -152,23 +148,19 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             attrs['contact_info'] = info
         return attrs
 
+    def create(self, validated_data):
+        validated_data.pop('remove_image', None)
+        return super().create(validated_data)
 
-class ReportSerializer(serializers.ModelSerializer):
-    announcement_title = serializers.CharField(source='announcement.title', read_only=True)
-    announcement_status = serializers.CharField(source='announcement.status', read_only=True)
-    reporter_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Report
-        fields = ('id', 'announcement', 'announcement_title', 'announcement_status', 'reporter_name',
-                  'reason', 'status', 'created_at')
-        read_only_fields = ('announcement', 'status', 'created_at')
-
-    def get_reporter_name(self, obj):
-        return obj.reporter.username if obj.reporter else 'Anonymous'
-
-    def validate_reason(self, value):
-        value = value.strip()
-        if len(value) < 5:
-            raise serializers.ValidationError('Please describe the problem (at least 5 characters).')
-        return value
+    def update(self, instance, validated_data):
+        remove = validated_data.pop('remove_image', False)
+        old_image = instance.image.name if instance.image else None
+        replacing = 'image' in validated_data and validated_data['image'] is not None
+        if remove and not replacing:
+            validated_data['image'] = ''
+        elif 'image' in validated_data and validated_data['image'] is None:
+            validated_data.pop('image')  # an empty file field means "keep the current image"
+        instance = super().update(instance, validated_data)
+        if old_image and old_image != (instance.image.name or None):
+            instance.image.storage.delete(old_image)
+        return instance

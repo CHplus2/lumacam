@@ -53,7 +53,7 @@ def make_image(slug, label):
 
 
 class Command(BaseCommand):
-    help = 'Create the demo admin and sample announcements.'
+    help = 'Create the emergency admin account and sample announcements.'
 
     def add_arguments(self, parser):
         parser.add_argument('--no-images', action='store_true',
@@ -73,11 +73,11 @@ class Command(BaseCommand):
                 ann = Announcement(
                     title=title, description=desc, category=Category.objects.get(slug=slug),
                     publisher_name=NAMES[i % len(NAMES)], contact_method=method, contact_info=info,
-                    status=Announcement.Status.APPROVED if i < 8 else Announcement.Status.PENDING,
+                    status=Announcement.Status.APPROVED,
                     expires_at=today + timedelta(days=days) if days else None,
                 )
                 if not opts['no_images']:
                     ann.image.save('demo.jpg', make_image(slug, title), save=False)
                 ann.save()
         self.stdout.write(self.style.SUCCESS(
-            'Demo data ready. Admin login: admin / Admin12345!'))
+            'Demo data ready. Emergency admin at /django-admin/: admin / Admin12345!'))

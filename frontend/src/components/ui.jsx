@@ -32,10 +32,6 @@ export function ErrorBox({ message, onRetry }) {
   )
 }
 
-export function StatusBadge({ status }) {
-  return <span className={`status status-${status}`}>{status}</span>
-}
-
 export function CategoryBadge({ category }) {
   if (!category) return null
   const Icon = ICONS[category.icon]

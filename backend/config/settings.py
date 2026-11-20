@@ -171,16 +171,16 @@ STORAGES = {
 }
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.SessionAuthentication'],
-    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticatedOrReadOnly'],
+    # The public API has no accounts. /django-admin/ keeps its own login for emergency clean-up.
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12,
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],
     'DEFAULT_THROTTLE_RATES': {
-        'auth': os.environ.get('AUTH_THROTTLE_RATE', '30/min'),
         'announce': os.environ.get('ANNOUNCE_THROTTLE_RATE', '10/hour'),
-        'report': os.environ.get('REPORT_THROTTLE_RATE', '20/hour'),
+        'modify': os.environ.get('MODIFY_THROTTLE_RATE', '60/hour'),
         'category': os.environ.get('CATEGORY_THROTTLE_RATE', '10/hour'),
     },
 }

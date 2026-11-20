@@ -1,53 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Calendar, ExternalLink, Flag, Mail, MessageCircle, Trash2 } from 'lucide-react'
+import { ArrowLeft, Calendar, ExternalLink, Mail, MessageCircle, Pencil, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
-import { useAuth } from '../auth'
-import { CategoryBadge, EmptyState, ErrorBox, Spinner, StatusBadge } from '../components/ui'
+import { CategoryBadge, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { contactLink, fmtDate, fmtDay, safeUrl } from '../utils'
-
-function ReportForm({ id }) {
-  const [open, setOpen] = useState(false)
-  const [reason, setReason] = useState('')
-  const [msg, setMsg] = useState(null)
-  const [busy, setBusy] = useState(false)
-
-  const submit = async (e) => {
-    e.preventDefault()
-    setBusy(true); setMsg(null)
-    try {
-      await api.post(`/announcements/${id}/report/`, { reason })
-      setMsg({ ok: true, text: 'Thanks. An administrator will review this announcement.' })
-      setOpen(false); setReason('')
-    } catch (err) {
-      const { message, fields } = parseError(err)
-      setMsg({ ok: false, text: fields.reason || message })
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <div className="report">
-      {msg && <div className={`alert ${msg.ok ? 'alert-ok' : 'alert-error'}`} role="status">{msg.text}</div>}
-      {!open ? (
-        <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}><Flag size={15} /> Report this announcement</button>
-      ) : (
-        <form onSubmit={submit} className="stack">
-          <label htmlFor="reason">What is wrong with this announcement?</label>
-          <textarea id="reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} required />
-          <div className="row">
-            <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? 'Sending...' : 'Submit report'}</button>
-            <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>Cancel</button>
-          </div>
-        </form>
-      )}
-    </div>
-  )
-}
 
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { isAdmin } = useAuth()
+  const [deleting, setDeleting] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [a, setA] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -62,7 +24,7 @@ export default function Detail() {
   }, [id])
 
   if (loading) return <Spinner />
-  if (notFound) return <EmptyState title="Announcement not found" text="It may have been removed, expired or is awaiting approval."
+  if (notFound) return <EmptyState title="Announcement not found" text="It may have been deleted."
     action={<Link to="/explore" className="btn btn-primary">Browse announcements</Link>} />
   if (error) return <ErrorBox message={error} />
 
@@ -71,23 +33,20 @@ export default function Detail() {
   const ContactIcon = a.contact_method === 'email' ? Mail : a.contact_method === 'whatsapp' ? MessageCircle : ExternalLink
 
   const remove = async () => {
-    if (!window.confirm('Delete this announcement permanently?')) return
+    if (!window.confirm(`Delete "${a.title}"? It will disappear for everyone.`)) return
+    setDeleting(true); setActionError('')
     try {
-      await api.delete(`/admin/announcements/${a.id}/`)
-      navigate('/admin')
-    } catch (e) { setError(parseError(e).message) }
+      await api.delete(`/announcements/${a.id}/`)
+      navigate('/explore', { replace: true })
+    } catch (e) {
+      setActionError(parseError(e).message)
+      setDeleting(false)
+    }
   }
 
   return (
     <article className="detail">
       <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}><ArrowLeft size={16} /> Back</button>
-
-      {a.status !== 'approved' && (
-        <div className="alert alert-warn">
-          This announcement is <StatusBadge status={a.status} /> and is not visible to other students.
-          {a.rejection_reason && <> Reason: {a.rejection_reason}</>}
-        </div>
-      )}
 
       {a.image_url && <img className="detail-img" src={a.image_url} alt={a.title} />}
 
@@ -122,12 +81,13 @@ export default function Detail() {
           </div>
         </div>
 
-        {isAdmin && (
-          <div className="row manage">
-            <button className="btn btn-sm btn-danger" onClick={remove}><Trash2 size={15} /> Delete</button>
-          </div>
-        )}
-        {a.status === 'approved' && <ReportForm id={a.id} />}
+        <ErrorBox message={actionError} />
+        <div className="row manage">
+          <Link to={`/announcements/${a.id}/edit`} className="btn btn-sm"><Pencil size={15} /> Edit</Link>
+          <button className="btn btn-sm btn-danger" onClick={remove} disabled={deleting}>
+            <Trash2 size={15} /> {deleting ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
       </div>
     </article>
   )
