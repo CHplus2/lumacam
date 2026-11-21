@@ -60,8 +60,10 @@ export default function Categories() {
             </div>
           ))}
           <Link to="/categories/new" className="cat-card cat-card-new">
-            <span className="cat-icon"><Plus size={26} /></span>
-            <span className="cat-name">New category</span>
+            <span className="cat-head">
+              <span className="cat-icon"><Plus size={26} /></span>
+              <span className="cat-name">New category</span>
+            </span>
             <span className="cat-desc">Add a new kind of announcement</span>
           </Link>
         </div>
