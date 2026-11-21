@@ -101,7 +101,7 @@ export function PickupInput({ value, onChange, suggestions = [], id = 'pickup_in
       {!full && (
         <div className="row pickup-entry">
           <input id={id} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
-            maxLength={40} placeholder="e.g. Block C lobby, Kolej 5, Library entrance" list={`${id}_list`}
+            maxLength={40} placeholder="e.g. Block C lobby" list={`${id}_list`}
             enterKeyHint="done" />
           <button type="button" className="btn btn-sm" onClick={() => add(text)} disabled={!tidy(text)}>
             <Plus size={14} /> Add

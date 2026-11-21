@@ -215,6 +215,8 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
 .pickup-input { display: flex; flex-direction: column; gap: 10px; }
 .pickup-entry { flex-wrap: nowrap; }
 .pickup-entry input { flex: 1; min-width: 0; }
+/* Hide Chrome's datalist arrow; suggestions still appear while typing. */
+.pickup-entry input::-webkit-calendar-picker-indicator { display: none !important; }
 .pickup-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .chip-tiny { padding: 4px 10px; font-size: 0.8rem; }
 .selling-fields { display: flex; flex-direction: column; gap: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: #fafbff; }
