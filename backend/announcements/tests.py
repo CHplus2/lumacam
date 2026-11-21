@@ -92,6 +92,25 @@ class CreateTests(BaseCase):
         r = self.client.post('/api/announcements/', P(contact_method='whatsapp', contact_info='+60 12-345 6789'))
         self.assertEqual((r.status_code, r.data['contact_info']), (201, '60123456789'))
 
+    def test_contact_is_optional(self):
+        base = self.payload()
+        del base['contact_method'], base['contact_info']
+        r = self.client.post('/api/announcements/', base)
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual((r.data['contact_method'], r.data['contact_info']), ('none', ''))
+        r = self.client.post('/api/announcements/', self.payload(contact_method='none', contact_info='ignored@x.com'))
+        self.assertEqual(r.data['contact_info'], '')
+
+    def test_chosen_contact_method_needs_details(self):
+        r = self.client.post('/api/announcements/', self.payload(contact_method='email', contact_info='  '))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('No contact', r.data['contact_info'][0])
+
+    def test_edit_can_switch_contact_off(self):
+        ann = self.make()
+        r = self.client.patch(f'/api/announcements/{ann.id}/', {'contact_method': 'none'})
+        self.assertEqual((r.status_code, r.data['contact_info']), (200, ''))
+
     def test_past_expiry_rejected(self):
         r = self.client.post('/api/announcements/', self.payload(expires_at=str(timezone.localdate() - timedelta(days=1))))
         self.assertEqual(r.status_code, 400)
@@ -204,25 +223,47 @@ class CategoryTests(BaseCase):
         self.client.post('/api/announcements/', self.payload(category=r.data['id']))
         self.assertEqual(self.public_titles('/api/announcements/?category=sports-fitness'), ['Fresh cookies'])
 
-    def test_builtin_flag(self):
-        flags = {c['slug']: c['is_builtin'] for c in self.client.get('/api/categories/').data}
-        self.assertTrue(all(flags.values()))
-        self.assertFalse(self.client.post('/api/categories/', self.new).data['is_builtin'])
+    def test_delete_empty_category_hides_it(self):
+        cat_id = self.client.post('/api/categories/', self.new).data['id']
+        self.assertEqual(self.client.delete(f'/api/categories/{cat_id}/').status_code, 204)
+        self.assertNotIn('sports-fitness', [c['slug'] for c in self.client.get('/api/categories/').data])
+        self.assertTrue(Category.objects.get(pk=cat_id).is_removed)  # restorable in /django-admin/
+        self.assertEqual(self.client.delete(f'/api/categories/{cat_id}/').status_code, 404)
 
-    def test_delete_user_category_moves_posts_to_other(self):
+    def test_cannot_delete_category_with_posts(self):
         cat_id = self.client.post('/api/categories/', self.new).data['id']
         self.client.post('/api/announcements/', self.payload(category=cat_id))
         r = self.client.delete(f'/api/categories/{cat_id}/')
-        self.assertEqual((r.status_code, r.data['moved_announcements'], r.data['moved_to']), (200, 1, 'other'))
-        self.assertNotIn('sports-fitness', [c['slug'] for c in self.client.get('/api/categories/').data])
-        self.assertEqual(self.public_titles('/api/announcements/?category=other'), ['Fresh cookies'])
-        self.assertEqual(self.client.delete(f'/api/categories/{cat_id}/').status_code, 404)
+        self.assertEqual((r.status_code, r.data['announcement_count']), (400, 1))
+        self.assertIn('still has 1 announcement', r.data['detail'])
+        self.assertFalse(Category.objects.get(pk=cat_id).is_removed)
 
-    def test_builtin_categories_cannot_be_deleted(self):
-        for slug in ('food-drinks', 'other'):
-            cat = Category.objects.get(slug=slug)
-            self.assertEqual(self.client.delete(f'/api/categories/{cat.id}/').status_code, 400)
-        self.assertEqual(Category.objects.count(), 6)
+    def test_expired_posts_also_block_delete(self):
+        self.make(expires_at=timezone.localdate() - timedelta(days=1))
+        self.assertEqual(self.client.delete(f'/api/categories/{self.cat.id}/').status_code, 400)
+
+    def test_removed_posts_do_not_block_delete(self):
+        self.make(status='removed')
+        self.assertEqual(self.client.delete(f'/api/categories/{self.cat.id}/').status_code, 204)
+
+    def test_builtin_categories_can_be_deleted_when_empty(self):
+        other = Category.objects.get(slug='other')
+        self.assertEqual(self.client.delete(f'/api/categories/{other.id}/').status_code, 204)
+        self.assertEqual(len(self.client.get('/api/categories/').data), 5)
+
+    def test_cannot_post_into_deleted_category(self):
+        self.client.delete(f'/api/categories/{self.other_cat.id}/')
+        r = self.client.post('/api/announcements/', self.payload(category=self.other_cat.id))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('category', r.data)
+
+    def test_recreating_deleted_category_restores_it(self):
+        first = self.client.post('/api/categories/', self.new).data
+        self.client.delete(f"/api/categories/{first['id']}/")
+        again = self.client.post('/api/categories/', {**self.new, 'name': 'sports & fitness', 'color': 'rose'})
+        self.assertEqual(again.status_code, 201, again.data)
+        self.assertEqual((again.data['id'], again.data['color']), (first['id'], 'rose'))
+        self.assertIn('sports-fitness', [c['slug'] for c in self.client.get('/api/categories/').data])
 
     def test_validation(self):
         self.assertEqual(self.client.post('/api/categories/', {**self.new, 'name': 'food & DRINKS'}).status_code, 400)

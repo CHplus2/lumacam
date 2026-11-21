@@ -2,7 +2,17 @@ from django.contrib import admin
 
 from .models import Announcement, Category
 
-admin.site.register(Category)
+
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'is_removed', 'sort_order')
+    list_filter = ('is_removed',)
+    actions = ['restore']
+
+    @admin.action(description='Restore selected categories')
+    def restore(self, request, queryset):
+        queryset.update(is_removed=False)
 
 
 @admin.register(Announcement)

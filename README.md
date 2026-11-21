@@ -6,7 +6,7 @@ This open setup is meant for hackathon demos and shared test links. A production
 
 - **Backend:** Python, Django 5, Django REST Framework, SQLite locally (Postgres via `DATABASE_URL`)
 - **Frontend:** React (Vite), React Router, Axios, Lucide icons, plain CSS
-- **Abuse limits:** posting, editing and category creation are rate limited per IP. Delete hides a post instead of erasing it, so it can be restored.
+- **Abuse limits:** posting, editing and category creation are rate limited per IP. Delete hides posts and categories instead of erasing them, so they can be restored. A category can only be deleted once it has no posts.
 
 ```
 lumacam/
@@ -47,9 +47,11 @@ All settings have development defaults. For deployments set these environment va
 | `CATEGORY_THROTTLE_RATE` | New categories per IP | `10/hour` |
 | `AUTO_MIGRATE` | Set `0` to stop production instances applying migrations on start | on when `DEBUG=false` |
 
-### Restoring deleted posts
+### Restoring deleted posts and categories
 
 Deleting a post in the app sets its status to "Removed" and hides it. To bring it back, open `/django-admin/` on the backend, sign in, go to **Announcements**, filter by status "Removed", select the posts and run **Restore selected posts**.
+
+Deleted categories work the same way: **Categories**, filter by "is removed", **Restore selected categories**. Creating a category with the same name in the app also brings it back.
 
 `seed_demo` creates the admin account `admin` / `Admin12345!` for this page (change it with `python manage.py changepassword admin`). Nothing on the public site needs a login.
 
@@ -86,7 +88,7 @@ cd backend && source .venv/bin/activate
 python manage.py test
 ```
 
-Covers posting without login and validation (contacts, URLs, images), editing (including replacing, removing and keeping images, and clearing optional fields), delete-as-hide, image storage and serving, user-created categories, rate limits, category filter, search, ordering, and a live-HTTP post/edit/delete flow.
+Covers posting without login and validation (optional contact, URLs, images), editing (including replacing, removing and keeping images, and clearing optional fields), delete-as-hide, image storage and serving, user-created categories and delete rules, rate limits, category filter, search, ordering, and a live-HTTP post/edit/delete flow.
 
 ## API overview (`/api`)
 
@@ -96,8 +98,9 @@ All endpoints are public and need no login or CSRF token.
 |---|---|
 | `GET /categories/` | with live announcement counts |
 | `POST /categories/` | `name`, `description`, `icon`, `color`; live immediately, rate limited |
+| `DELETE /categories/:id/` | only when the category has no posts (else 400); hides it, restorable |
 | `GET /announcements/?category=&search=&ordering=newest\|oldest\|expiring&page=` | live and unexpired only |
-| `POST /announcements/` | multipart, needs `publisher_name`; live immediately, rate limited |
+| `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); live immediately, rate limited |
 | `GET /announcements/:id/` | |
 | `PATCH /announcements/:id/` | multipart or JSON; `remove_image=true` drops the image; rate limited |
 | `DELETE /announcements/:id/` | hides the post (restorable in `/django-admin/`); rate limited |
@@ -110,7 +113,7 @@ All endpoints are public and need no login or CSRF token.
 3. On the announcement, click **Edit**, change the title or replace the photo, and save.
 4. Click a category card to verify filtering, use the search bar to verify search, and try the sort dropdown.
 5. Use the contact button (WhatsApp, email or link). External links open in a new tab with `rel="noopener noreferrer"`.
-6. On **Create**, choose "+ Create a new category", pick a name, icon and colour, and post. The new category card appears on the home page.
+6. Open **Categories** and click **New category**, pick a name, icon and colour, and save. The card appears on the home and Categories pages. Click its bin icon to delete it; a category that still has posts refuses with a message.
 7. Click **Delete** on a post. It disappears; restore it from `/django-admin/` if you like.
 8. Resize the browser below 720px. The top nav becomes a bottom bar with a prominent (+) Create button.
 

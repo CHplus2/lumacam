@@ -3,12 +3,6 @@ from django.db import models
 from django.utils import timezone
 
 
-# The six categories from the original brief. They cannot be deleted from the
-# app; "other" is also where posts go when their category is deleted.
-BUILTIN_CATEGORY_SLUGS = frozenset({'food-drinks', 'marketplace', 'events', 'surveys', 'opportunities', 'other'})
-FALLBACK_CATEGORY_SLUG = 'other'
-
-
 class Category(models.Model):
     name = models.CharField(max_length=60, unique=True)
     slug = models.SlugField(max_length=60, unique=True)
@@ -19,6 +13,9 @@ class Category(models.Model):
     # Kept for a future moderation step; new categories are live immediately.
     is_approved = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+    # "Delete" in the app hides a category instead of erasing it, so it can be
+    # restored in /django-admin/. Only categories without posts can be deleted.
+    is_removed = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         ordering = ['sort_order', 'name']
@@ -26,10 +23,6 @@ class Category(models.Model):
 
     def __str__(self):
         return self.name
-
-    @property
-    def is_builtin(self):
-        return self.slug in BUILTIN_CATEGORY_SLUGS
 
 
 def announcement_image_path(instance, filename):
@@ -51,6 +44,7 @@ class Announcement(models.Model):
         WHATSAPP = 'whatsapp', 'WhatsApp'
         EMAIL = 'email', 'Email'
         LINK = 'link', 'External link'
+        NONE = 'none', 'No contact'
 
     title = models.CharField(max_length=120)
     description = models.TextField(max_length=3000)
@@ -60,8 +54,8 @@ class Announcement(models.Model):
                                   on_delete=models.SET_NULL, related_name='announcements')
     publisher_name = models.CharField(max_length=80, default='')
     image = models.ImageField(upload_to=announcement_image_path, blank=True)
-    contact_method = models.CharField(max_length=10, choices=ContactMethod.choices)
-    contact_info = models.CharField(max_length=254)
+    contact_method = models.CharField(max_length=10, choices=ContactMethod.choices, default=ContactMethod.NONE)
+    contact_info = models.CharField(max_length=254, blank=True)
     external_url = models.URLField(blank=True, help_text='Optional registration / Google Forms link')
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.APPROVED, db_index=True)
     rejection_reason = models.CharField(max_length=300, blank=True)

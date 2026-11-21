@@ -24,11 +24,10 @@ CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
 
 class CategorySerializer(serializers.ModelSerializer):
     announcement_count = serializers.IntegerField(read_only=True, required=False)
-    is_builtin = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Category
-        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'is_builtin', 'announcement_count')
+        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'announcement_count')
         read_only_fields = ('slug',)
         extra_kwargs = {'name': {'validators': []}}  # uniqueness checked case-insensitively below
 
@@ -36,7 +35,7 @@ class CategorySerializer(serializers.ModelSerializer):
         value = ' '.join(value.split())
         if not 2 <= len(value) <= 40:
             raise serializers.ValidationError('Category name must be 2-40 characters.')
-        if Category.objects.filter(name__iexact=value).exists():
+        if Category.objects.filter(name__iexact=value, is_removed=False).exists():
             raise serializers.ValidationError('A category with this name already exists.')
         return value
 
@@ -57,6 +56,14 @@ class CategorySerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        # Re-creating a deleted category brings it back (names are unique in the database).
+        removed = Category.objects.filter(name__iexact=validated_data['name'], is_removed=True).first()
+        if removed:
+            for key, val in validated_data.items():
+                setattr(removed, key, val)
+            removed.is_removed = False
+            removed.save()
+            return removed
         base = slugify(validated_data['name'])[:50] or 'category'
         slug, n = base, 2
         while Category.objects.filter(slug=slug).exists():
@@ -65,7 +72,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class AnnouncementSerializer(serializers.ModelSerializer):
-    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.filter(is_removed=False))
     category_detail = CategorySerializer(source='category', read_only=True)
     image = serializers.ImageField(write_only=True, required=False, allow_null=True)
     remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
@@ -128,9 +135,13 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        method = attrs.get('contact_method', getattr(self.instance, 'contact_method', None))
+        method = attrs.get('contact_method', getattr(self.instance, 'contact_method', Announcement.ContactMethod.NONE))
         info = (attrs.get('contact_info', getattr(self.instance, 'contact_info', '')) or '').strip()
-        if method == Announcement.ContactMethod.WHATSAPP:
+        if method == Announcement.ContactMethod.NONE:
+            info = ''  # contact is optional
+        elif not info:
+            raise serializers.ValidationError({'contact_info': 'Enter your contact details, or choose "No contact".'})
+        elif method == Announcement.ContactMethod.WHATSAPP:
             digits = re.sub(r'[\s\-+()]', '', info)
             if not digits.isdigit() or not 8 <= len(digits) <= 15:
                 raise serializers.ValidationError({'contact_info': 'Enter a valid phone number (8-15 digits, with country code).'})

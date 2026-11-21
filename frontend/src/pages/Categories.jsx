@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { CategoryCard, ErrorBox, Spinner } from '../components/ui'
+import { categoryDeleteBlocker } from '../utils'
 
 export default function Categories() {
   const { categories, loading, error, reload } = useCategories()
@@ -11,10 +12,13 @@ export default function Categories() {
   const [deleteError, setDeleteError] = useState('')
 
   const remove = async (c) => {
-    const note = c.announcement_count
-      ? ` Its ${c.announcement_count} announcement(s) will move to "Other Announcements".`
-      : ''
-    if (!window.confirm(`Delete the category "${c.name}"?${note}`)) return
+    const blocker = categoryDeleteBlocker(c)
+    if (blocker) {
+      setDeleteError(blocker)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    if (!window.confirm(`Delete the category "${c.name}"?`)) return
     setDeletingId(c.id); setDeleteError('')
     try {
       await api.delete(`/categories/${c.id}/`)
@@ -38,12 +42,11 @@ export default function Categories() {
           {categories.map((c) => (
             <div key={c.id} className="cat-wrap">
               <CategoryCard category={c} />
-              {!c.is_builtin && (
-                <button className="cat-delete" onClick={() => remove(c)} disabled={deletingId === c.id}
-                  aria-label={`Delete category ${c.name}`} title="Delete category">
-                  <Trash2 size={16} />
-                </button>
-              )}
+              <button className="cat-delete" onClick={() => remove(c)} disabled={deletingId === c.id}
+                aria-label={`Delete category ${c.name}`}
+                title={c.announcement_count ? 'Only empty categories can be deleted' : 'Delete category'}>
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
           <Link to="/categories/new" className="cat-card cat-card-new">

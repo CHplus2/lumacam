@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 
-from .models import FALLBACK_CATEGORY_SLUG, Announcement, Category
+from .models import Announcement, Category
 from .serializers import AnnouncementSerializer, CategorySerializer
 
 ORDERINGS = {
@@ -19,7 +19,7 @@ ORDERINGS = {
 def public_queryset():
     today = timezone.localdate()
     return (Announcement.objects.select_related('category')
-            .filter(status=Announcement.Status.APPROVED)
+            .filter(status=Announcement.Status.APPROVED, category__is_removed=False)
             .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=today)))
 
 
@@ -45,20 +45,20 @@ class CategoryListView(generics.ListCreateAPIView):
         live = Q(announcements__status=Announcement.Status.APPROVED) & (
             Q(announcements__expires_at__isnull=True) | Q(announcements__expires_at__gte=today))
         # Meta.ordering is ignored on aggregate queries, so order explicitly.
-        return (Category.objects
+        return (Category.objects.filter(is_removed=False)
                 .annotate(announcement_count=Count('announcements', filter=live))
                 .order_by('sort_order', 'name'))
 
 
 
 class CategoryDetailView(generics.RetrieveDestroyAPIView):
-    """Anyone can delete a category they created (the six built-in ones are protected).
+    """Anyone can delete a category, but only once it has no posts.
 
-    Its announcements are not lost: they move to "Other Announcements".
+    Delete hides the category (restorable in /django-admin/); nothing is moved.
     """
     serializer_class = CategorySerializer
     permission_classes = [AllowAny]
-    queryset = Category.objects.all()
+    queryset = Category.objects.filter(is_removed=False)
     throttle_scope = 'modify'
 
     def get_throttles(self):
@@ -66,12 +66,17 @@ class CategoryDetailView(generics.RetrieveDestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         cat = self.get_object()
-        if cat.is_builtin:
-            return Response({'detail': 'Built-in categories cannot be deleted.'}, status=status.HTTP_400_BAD_REQUEST)
-        fallback = Category.objects.get(slug=FALLBACK_CATEGORY_SLUG)
-        moved = cat.announcements.update(category=fallback)
-        cat.delete()
-        return Response({'moved_announcements': moved, 'moved_to': fallback.slug}, status=status.HTTP_200_OK)
+        # Count expired posts too: they can still be opened and edited by link.
+        posts = cat.announcements.filter(status=Announcement.Status.APPROVED).count()
+        if posts:
+            return Response(
+                {'detail': f'"{cat.name}" still has {posts} announcement{"s" if posts != 1 else ""}. '
+                           'Delete them or move them to another category first.',
+                 'announcement_count': posts},
+                status=status.HTTP_400_BAD_REQUEST)
+        cat.is_removed = True
+        cat.save(update_fields=['is_removed'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class AnnouncementListCreateView(generics.ListCreateAPIView):

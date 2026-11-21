@@ -4,7 +4,7 @@ import { Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
-import { ICONS } from '../utils'
+import { ICONS, categoryDeleteBlocker } from '../utils'
 
 const SORTS = [
   { value: 'newest', label: 'Newest first' },
@@ -76,8 +76,9 @@ export default function Listing() {
   }
 
   const deleteCategory = async () => {
-    const note = items.length ? ' Its announcements will move to "Other Announcements".' : ''
-    if (!window.confirm(`Delete the category "${category.name}"?${note}`)) return
+    const blocker = categoryDeleteBlocker(category)
+    if (blocker) { setDeleteError(blocker); return }
+    if (!window.confirm(`Delete the category "${category.name}"?`)) return
     setDeleting(true); setDeleteError('')
     try {
       await api.delete(`/categories/${category.id}/`)
@@ -144,7 +145,7 @@ export default function Listing() {
         </>
       )}
 
-      {category && !category.is_builtin && (
+      {category && (
         <div className="page-foot">
           <ErrorBox message={deleteError} />
           <button className="btn btn-quiet-danger btn-sm" onClick={deleteCategory} disabled={deleting}>

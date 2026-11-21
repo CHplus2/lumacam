@@ -11,7 +11,7 @@ import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 const NEW_CATEGORY = '__new__'
 const MAX_PICK_MB = 20 // larger photos are downsized before upload
 const empty = {
-  publisher_name: '', title: '', category: '', description: '', contact_method: 'whatsapp',
+  publisher_name: '', title: '', category: '', description: '', contact_method: 'none',
   contact_info: '', external_url: '', expires_at: '',
 }
 
@@ -193,16 +193,18 @@ export default function AnnouncementForm() {
         <input id="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={pickFile} className={shownImage ? '' : 'sr-only'} />
       </Field>
 
-      <div className="grid-2">
-        <Field label="Contact method" htmlFor="contact_method" error={fields.contact_method}>
+      <div className={form.contact_method === 'none' ? '' : 'grid-2'}>
+        <Field label="Contact (optional)" htmlFor="contact_method" error={fields.contact_method}>
           <select id="contact_method" value={form.contact_method} onChange={set('contact_method')}>
             {CONTACT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </Field>
-        <Field label="Contact details" htmlFor="contact_info" error={fields.contact_info}>
-          <input id="contact_info" value={form.contact_info} onChange={set('contact_info')} required placeholder={method.placeholder}
-            inputMode={form.contact_method === 'whatsapp' ? 'tel' : undefined} />
-        </Field>
+        {form.contact_method !== 'none' && (
+          <Field label="Contact details" htmlFor="contact_info" error={fields.contact_info}>
+            <input id="contact_info" value={form.contact_info} onChange={set('contact_info')} required placeholder={method.placeholder}
+              inputMode={form.contact_method === 'whatsapp' ? 'tel' : undefined} />
+          </Field>
+        )}
       </div>
 
       <div className="grid-2">

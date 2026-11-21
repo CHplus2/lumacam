@@ -59,13 +59,16 @@ export default function Detail() {
         </p>
         <p className="detail-desc">{a.description}</p>
 
+        {(contact || formUrl) && (
         <div className="contact-box">
-          <h3>Contact</h3>
-          <p className="muted">
-            {a.contact_method === 'whatsapp' && `WhatsApp: +${a.contact_info}`}
-            {a.contact_method === 'email' && `Email: ${a.contact_info}`}
-            {a.contact_method === 'link' && 'Use the link below to get in touch or sign up.'}
-          </p>
+          <h3>{contact ? 'Contact' : 'Links'}</h3>
+          {contact && (
+            <p className="muted">
+              {a.contact_method === 'whatsapp' && `WhatsApp: +${a.contact_info}`}
+              {a.contact_method === 'email' && `Email: ${a.contact_info}`}
+              {a.contact_method === 'link' && 'Use the link below to get in touch or sign up.'}
+            </p>
+          )}
           <div className="row">
             {contact && (
               <a className="btn btn-primary" href={contact.href}
@@ -80,6 +83,7 @@ export default function Detail() {
             )}
           </div>
         </div>
+        )}
 
         <ErrorBox message={actionError} />
         <div className="row manage">
