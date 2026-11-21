@@ -157,7 +157,7 @@ label { font-weight: 600; font-size: 0.9rem; }
 .cat-icon { width: 48px; height: 48px; border-radius: 14px; background: #fff; color: var(--tone-fg); display: grid; place-items: center; box-shadow: var(--shadow); flex: none; margin-bottom: 6px; }
 .cat-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 .cat-head .cat-icon { margin-bottom: 0; }
-.cat-name { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
+.cat-name { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; overflow-wrap: break-word; }
 /* Leave room for the bin button in the corner on the Categories page. */
 .cat-wrap .cat-head { padding-right: 40px; }
 .cat-desc { color: #4b5563; font-size: 0.875rem; }
@@ -269,14 +269,18 @@ label { font-weight: 600; font-size: 0.9rem; }
   h1 { font-size: 1.45rem; }
   .hero { padding: 28px 20px; border-radius: 20px; }
   .hero h1 { font-size: 1.6rem; }
-  .cat-grid { gap: 12px; }
-  .cat-card { padding: 14px; border-radius: 18px; }
-  .cat-icon { width: 36px; height: 36px; border-radius: 11px; }
-  .cat-head .cat-icon svg { width: 20px; height: 20px; }
-  .cat-head { gap: 8px; }
-  .cat-name { font-size: 0.9rem; }
-  .cat-wrap .cat-head { padding-right: 34px; }
-  .cat-delete { top: 10px; right: 10px; width: 30px; height: 30px; }
+  /* Phones: one row per category (icon, name, count) so names never break mid-word. */
+  .cat-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .cat-card { flex-direction: row; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; }
+  .cat-card:hover { transform: none; }
+  .cat-head { flex: 1; min-width: 0; margin-bottom: 0; gap: 12px; }
+  .cat-icon { width: 40px; height: 40px; border-radius: 12px; }
+  .cat-head .cat-icon svg { width: 22px; height: 22px; }
+  .cat-name { font-size: 1rem; }
+  .cat-count { margin-top: 0; white-space: nowrap; }
+  .cat-wrap .cat-head { padding-right: 0; }
+  .cat-wrap .cat-card { padding-right: 56px; }
+  .cat-delete { top: 50%; right: 12px; transform: translateY(-50%); width: 32px; height: 32px; }
   .cat-desc { display: none; }
   .ann-grid { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
