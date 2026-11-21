@@ -151,13 +151,13 @@ label { font-weight: 600; font-size: 0.9rem; }
 .link-more { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 
 /* Category cards */
-.cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.cat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .cat-card { display: flex; flex-direction: column; gap: 6px; padding: 22px; border-radius: 20px; background: var(--tone-bg); color: var(--text); border: 1px solid transparent; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
 .cat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--tone-fg); text-decoration: none; }
 .cat-icon { width: 48px; height: 48px; border-radius: 14px; background: #fff; color: var(--tone-fg); display: grid; place-items: center; box-shadow: var(--shadow); flex: none; margin-bottom: 6px; }
 .cat-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 .cat-head .cat-icon { margin-bottom: 0; }
-.cat-name { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; }
+.cat-name { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
 /* Leave room for the bin button in the corner on the Categories page. */
 .cat-wrap .cat-head { padding-right: 40px; }
 .cat-desc { color: #4b5563; font-size: 0.875rem; }
@@ -254,7 +254,7 @@ label { font-weight: 600; font-size: 0.9rem; }
 
 /* Responsive */
 @media (max-width: 900px) {
-  .cat-grid, .ann-grid { grid-template-columns: repeat(2, 1fr); }
+  .cat-grid, .ann-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stats { grid-template-columns: repeat(3, 1fr); }
   .nav-link { padding: 8px 8px; font-size: 0.85rem; }
 }
@@ -270,10 +270,13 @@ label { font-weight: 600; font-size: 0.9rem; }
   .hero { padding: 28px 20px; border-radius: 20px; }
   .hero h1 { font-size: 1.6rem; }
   .cat-grid { gap: 12px; }
-  .cat-card { padding: 16px; border-radius: 18px; }
-  .cat-icon { width: 42px; height: 42px; }
-  .cat-head { gap: 10px; }
-  .cat-name { font-size: 0.95rem; }
+  .cat-card { padding: 14px; border-radius: 18px; }
+  .cat-icon { width: 36px; height: 36px; border-radius: 11px; }
+  .cat-head .cat-icon svg { width: 20px; height: 20px; }
+  .cat-head { gap: 8px; }
+  .cat-name { font-size: 0.9rem; }
+  .cat-wrap .cat-head { padding-right: 34px; }
+  .cat-delete { top: 10px; right: 10px; width: 30px; height: 30px; }
   .cat-desc { display: none; }
   .ann-grid { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
