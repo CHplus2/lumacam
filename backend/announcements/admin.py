@@ -1,6 +1,8 @@
 from django.contrib import admin
 
-from .models import Announcement, Category
+from .models import Announcement, Category, PickupLocation
+
+admin.site.register(PickupLocation)
 
 
 

@@ -6,6 +6,7 @@ import { useCategories } from '../hooks'
 import { EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { CONTACT_METHODS, emptyCategory, todayISO } from '../utils'
 import { CategoryFields, Field } from '../components/fields'
+import { PickupInput, StockPicker } from '../components/selling'
 import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
 const NEW_CATEGORY = '__new__'
@@ -13,6 +14,7 @@ const MAX_PICK_MB = 20 // larger photos are downsized before upload
 const empty = {
   publisher_name: '', title: '', category: '', description: '', contact_method: 'none',
   contact_info: '', external_url: '', expires_at: '', event_start: '', event_end: '',
+  availability: 'available', pickup_locations: [],
 }
 
 export default function AnnouncementForm() {
@@ -49,12 +51,19 @@ export default function AnnouncementForm() {
           description: data.description, contact_method: data.contact_method, contact_info: data.contact_info,
           external_url: data.external_url || '', expires_at: data.expires_at || '',
           event_start: data.event_start || '', event_end: data.event_end || '',
+          availability: data.availability || 'available', pickup_locations: data.pickup_locations || [],
         })
         setExistingImage(data.image_url)
       })
       .catch((e) => (e.response?.status === 404 ? setNotFound(true) : setError(parseError(e).message)))
       .finally(() => setLoading(false))
   }, [id, editing])
+
+  // Pickup places other posts already use, for one-tap suggestions.
+  const [placeSuggestions, setPlaceSuggestions] = useState([])
+  useEffect(() => {
+    api.get('/pickup-locations/').then(({ data }) => setPlaceSuggestions(data.map((p) => p.name))).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!file) { setPreview(null); return undefined }
@@ -91,6 +100,10 @@ export default function AnnouncementForm() {
     if (input) input.value = ''
   }
 
+  const selling = form.category === NEW_CATEGORY
+    ? Boolean(newCat.sells_items)
+    : Boolean(categories.find((c) => String(c.id) === String(form.category))?.sells_items)
+
   const ensureCategory = async () => {
     if (form.category !== NEW_CATEGORY) return form.category
     if (createdCat && createdCat.name === newCat.name.trim()) return createdCat.id
@@ -112,7 +125,12 @@ export default function AnnouncementForm() {
     try {
       const categoryId = await ensureCategory()
       const body = new FormData()
-      Object.entries({ ...form, category: categoryId }).forEach(([k, v]) => {
+      const { pickup_locations: places, availability, ...rest } = form
+      if (selling) {
+        body.append('availability', availability)
+        body.append('pickup_locations', JSON.stringify(places))
+      }
+      Object.entries({ ...rest, category: categoryId }).forEach(([k, v]) => {
         // On create, skip empty optional fields; on edit, send them so they can be cleared.
         if (!editing && ['expires_at', 'external_url', 'event_start', 'event_end'].includes(k) && !v) return
         body.append(k, v)
@@ -201,6 +219,21 @@ export default function AnnouncementForm() {
           <small className="muted">For events, deadlines or preorders, so people can find it by date. Leave empty if it doesn&apos;t apply.</small>
         )}
       </div>
+
+      {selling && (
+        <div className="selling-fields">
+          <div className="field">
+            <span className="label">Stock</span>
+            <StockPicker value={form.availability} onChange={(v) => setForm((f) => ({ ...f, availability: v }))} />
+            <small className="muted">You (or anyone) can change this later in one tap on the post.</small>
+          </div>
+          <Field label="Pickup places (optional)" htmlFor="pickup_input" error={fields.pickup_locations}
+            hint="Hostel blocks or campus spots where buyers can collect. Press Enter after each one.">
+            <PickupInput value={form.pickup_locations} suggestions={placeSuggestions}
+              onChange={(v) => setForm((f) => ({ ...f, pickup_locations: v }))} />
+          </Field>
+        </div>
+      )}
 
       <Field label="Description" htmlFor="description" error={fields.description} hint={`${form.description.length}/3000`}>
         <textarea id="description" rows={6} value={form.description} onChange={set('description')} maxLength={3000} required

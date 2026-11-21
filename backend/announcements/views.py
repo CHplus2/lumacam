@@ -15,7 +15,7 @@ from rest_framework.permissions import AllowAny
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
-from .models import Announcement, Category
+from .models import Announcement, Category, PickupLocation
 from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
                           TrashedCategorySerializer)
 from .trash import safe_purge
@@ -40,7 +40,7 @@ def not_expired_q(today, prefix=''):
 
 def public_queryset():
     today = timezone.localdate()
-    return (Announcement.objects.select_related('category')
+    return (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
             .filter(status=Announcement.Status.APPROVED, category__is_removed=False)
             .filter(not_expired_q(today)))
 
@@ -71,8 +71,10 @@ def apply_date_range(qs, date_from, date_to):
 
 def apply_search(qs, term):
     for word in (term or '').split()[:6]:
+        # Pickup places are matched through a subquery so posts aren't duplicated.
+        at_place = Announcement.objects.filter(pickup_locations__name__icontains=word).values('pk')
         qs = qs.filter(Q(title__icontains=word) | Q(description__icontains=word)
-                       | Q(publisher_name__icontains=word))
+                       | Q(publisher_name__icontains=word) | Q(pk__in=at_place))
     return qs
 
 
@@ -151,6 +153,10 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
             if timezone.is_naive(since):
                 since = timezone.make_aware(since, timezone.utc)
             qs = qs.filter(created_at__gt=since)
+        if p.get('pickup'):
+            qs = qs.filter(pickup_locations__name__iexact=p['pickup'].strip())  # names are unique
+        if p.get('stock') == 'in':
+            qs = qs.exclude(availability=Announcement.Availability.OUT)
         qs = apply_search(qs, p.get('search'))
         date_from, date_to = parse_day(p, 'date_from'), parse_day(p, 'date_to')
         qs = apply_date_range(qs, date_from, date_to)
@@ -185,13 +191,32 @@ class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         # Expired posts stay reachable by direct link so they can still be edited.
-        return (Announcement.objects.select_related('category')
+        return (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
                 .filter(status=Announcement.Status.APPROVED))
 
     def perform_destroy(self, instance):
         instance.status = Announcement.Status.REMOVED
         instance.removed_at = timezone.now()
         instance.save(update_fields=['status', 'removed_at', 'updated_at'])
+
+
+class PickupLocationListView(APIView):
+    """Pickup places used by live posts, most used first (for suggestions and filters).
+
+    ?category=<slug> limits it to one category.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        live = public_queryset()
+        if request.query_params.get('category'):
+            live = live.filter(category__slug=request.query_params['category'])
+        rows = (PickupLocation.objects
+                .filter(announcements__in=live.values('pk'))
+                .annotate(count=Count('announcements', filter=Q(announcements__in=live.values('pk'))))
+                .order_by('-count', 'name')
+                .values('name', 'count')[:30])
+        return Response(list(rows))
 
 
 # ---------------- Trash ----------------
@@ -205,7 +230,7 @@ class TrashAnnouncementListView(generics.ListAPIView):
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
-        qs = (Announcement.objects.select_related('category')
+        qs = (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
               .filter(status=Announcement.Status.REMOVED).order_by('-removed_at', '-id'))
         return apply_search(qs, self.request.query_params.get('search'))
 

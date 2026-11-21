@@ -179,6 +179,49 @@ label { font-weight: 600; font-size: 0.9rem; }
 .date-tile-day { font-size: 1.35rem; font-weight: 800; }
 .date-tile-month { margin-top: 3px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--danger); }
 .date-tile-more { margin-top: 3px; font-size: 0.62rem; font-weight: 600; color: var(--muted); }
+/* Stock status and pickup places (selling categories) */
+.stock-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.stock-available { background: #e6f7ee; color: #047857; }
+.stock-limited { background: #fff4e6; color: #b45309; }
+.stock-out { background: #f1f2f6; color: #4b5563; }
+.stock-badge.on-image { position: absolute; top: 12px; right: 12px; box-shadow: 0 4px 12px rgba(16, 24, 40, 0.18); }
+.stock-badge.on-image.stock-available { background: #fff; }
+.stock-badge.on-image.stock-limited { background: #fffbeb; }
+.stock-badge.on-image.stock-out { background: #374151; color: #fff; }
+.ann-card.is-out .ann-thumb img, .ann-card.is-out .ann-thumb > svg { filter: grayscale(1); opacity: 0.55; }
+.ann-place { display: flex; align-items: center; gap: 5px; font-size: 0.82rem; font-weight: 600; color: #374151; }
+.ann-place svg { flex: none; color: var(--danger); }
+.ann-place span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.stock-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stock-option { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--border); background: #fff; color: var(--muted); font: inherit; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.stock-option:hover:not(:disabled) { border-color: #c7cbd6; color: var(--text); }
+.stock-option:disabled { cursor: wait; }
+.stock-option.selected.stock-available { background: #e6f7ee; border-color: #34d399; color: #047857; }
+.stock-option.selected.stock-limited { background: #fff4e6; border-color: #fbbf24; color: #b45309; }
+.stock-option.selected.stock-out { background: #374151; border-color: #374151; color: #fff; }
+.stock-box { background: #f8f9fc; border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.stock-head { justify-content: space-between; }
+.stock-saved { color: #047857; font-weight: 600; }
+.detail-section { display: flex; flex-direction: column; gap: 10px; }
+
+.pickup-tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.pickup-tag { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: #fff; border: 1px solid var(--border); color: var(--text); font-size: 0.85rem; font-weight: 600; }
+.pickup-tag svg { color: var(--danger); }
+a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
+.pickup-tag.removable { padding-right: 6px; }
+.pickup-tag button { border: 0; background: #f1f2f6; color: var(--muted); width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.pickup-tag button:hover { background: #fee2e2; color: var(--danger); }
+.pickup-input { display: flex; flex-direction: column; gap: 10px; }
+.pickup-entry { flex-wrap: nowrap; }
+.pickup-entry input { flex: 1; min-width: 0; }
+.pickup-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chip-tiny { padding: 4px 10px; font-size: 0.8rem; }
+.selling-fields { display: flex; flex-direction: column; gap: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: #fafbff; }
+.check-card { align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.check-card input { margin-top: 3px; }
+.sell-filter { margin-top: -12px; }
+
 .ann-actions { padding: 0 16px 14px; display: flex; gap: 8px; }
 .ann-actions .btn { flex: 1; }
 .contact-whatsapp { color: #128c4b; border-color: #bbe7cd; background: #f0fbf4; }
@@ -289,6 +332,7 @@ label { font-weight: 600; font-size: 0.9rem; }
   .toolbar { flex-direction: column; }
   .toolbar select { width: 100%; }
   .date-filter { margin-top: -8px; }
+  .stock-option { flex-direction: column; gap: 2px; font-size: 0.8rem; min-height: 54px; }
   .date-filter .chips { width: 100%; }
   .date-range { width: 100%; }
   .date-range input { flex: 1; min-width: 0; }

@@ -17,10 +17,25 @@ class Category(models.Model):
     # live posts). It is erased for good TRASH_DAYS after removed_at.
     is_removed = models.BooleanField(default=False, db_index=True)
     removed_at = models.DateTimeField(null=True, blank=True)
+    # Categories where students sell food or items get a stock status and
+    # pickup place tags on their posts.
+    sells_items = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['sort_order', 'name']
         verbose_name_plural = 'categories'
+
+    def __str__(self):
+        return self.name
+
+
+class PickupLocation(models.Model):
+    """A hostel or campus spot where buyers collect food or items, e.g. "Block C lobby"."""
+    name = models.CharField(max_length=40, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
 
     def __str__(self):
         return self.name
@@ -40,6 +55,12 @@ class Announcement(models.Model):
         # "Delete" in the app moves a post to the Trash; it is erased for good
         # TRASH_DAYS after removed_at, and can be restored until then.
         REMOVED = 'removed', 'In trash'
+
+    class Availability(models.TextChoices):
+        NONE = '', 'Not applicable'
+        AVAILABLE = 'available', 'Available'
+        LIMITED = 'limited', 'Limited stock'
+        OUT = 'out', 'Out of stock'
 
     class ContactMethod(models.TextChoices):
         WHATSAPP = 'whatsapp', 'WhatsApp'
@@ -68,6 +89,10 @@ class Announcement(models.Model):
     event_start = models.DateField(null=True, blank=True, db_index=True)
     event_end = models.DateField(null=True, blank=True)
     removed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Only used in categories that sell items (Category.sells_items).
+    availability = models.CharField(max_length=10, choices=Availability.choices, blank=True, default='')
+    stock_updated_at = models.DateTimeField(null=True, blank=True)
+    pickup_locations = models.ManyToManyField(PickupLocation, blank=True, related_name='announcements')
 
     class Meta:
         ordering = ['-created_at']

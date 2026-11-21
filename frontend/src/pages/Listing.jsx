@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Bell, BellOff, CalendarDays, Search, Trash2, X } from 'lucide-react'
+import { Bell, BellOff, CalendarDays, MapPin, PackageCheck, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
@@ -54,6 +54,16 @@ export default function Listing() {
   const category = categories.find((c) => c.slug === slug)
   const follows = useFollows()
   const following = category ? follows.isFollowing(category.slug) : false
+  // Selling categories: "In stock only" and pickup place filters (kept in the URL).
+  const selling = Boolean(category?.sells_items)
+  const stockIn = selling && params.get('stock') === 'in'
+  const pickup = selling ? params.get('pickup') || '' : ''
+  const [places, setPlaces] = useState([])
+  useEffect(() => {
+    if (!selling) return
+    api.get('/pickup-locations/', { params: { category: slug } })
+      .then(({ data }) => setPlaces(data)).catch(() => setPlaces([]))
+  }, [selling, slug])
 
   const [items, setItems] = useState([])
   const [page, setPage] = useState(1)
@@ -87,6 +97,7 @@ export default function Listing() {
         params: {
           category: slug || undefined, search: urlQ || undefined, ordering, page: pageNo,
           date_from: dates.from || undefined, date_to: dates.to || undefined,
+          stock: stockIn ? 'in' : undefined, pickup: pickup || undefined,
         },
       })
       if (myId !== requestId.current) return // a newer request superseded this one
@@ -98,7 +109,7 @@ export default function Listing() {
     } finally {
       if (myId === requestId.current) setLoading(false)
     }
-  }, [slug, urlQ, ordering, dates.from, dates.to])
+  }, [slug, urlQ, ordering, dates.from, dates.to, stockIn, pickup])
 
   useEffect(() => { load(1, true) }, [load])
 
@@ -125,6 +136,22 @@ export default function Listing() {
     ? { when, from: dates.from || todayISO(), to: dates.to }
     : { when, from: '', to: '' })
   const clearDates = () => setDateFilter({ when: '', from: '', to: '' })
+
+  const setParam = (key, value) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value); else next.delete(key)
+    setParams(next, { replace: true })
+  }
+  const sellFiltersActive = stockIn || Boolean(pickup)
+  const clearAllFilters = () => {
+    const next = new URLSearchParams(params)
+    ;['stock', 'pickup', ...DATE_PARAMS].forEach((k) => next.delete(k))
+    if (['newest', 'upcoming'].includes(next.get('ordering'))) next.delete('ordering')
+    setParams(next, { replace: true })
+  }
+  // Show the chosen place even if no live post uses it any more.
+  const placeChips = pickup && !places.some((p) => p.name.toLowerCase() === pickup.toLowerCase())
+    ? [{ name: pickup, count: 0 }, ...places] : places
 
   // Keep the date filter when switching between categories.
   const keepDates = (() => {
@@ -188,6 +215,32 @@ export default function Listing() {
         </select>
       </div>
 
+      {selling && (
+        <div className="date-filter sell-filter">
+          <span className="date-filter-label"><PackageCheck size={16} /> Stock</span>
+          <div className="chips chips-small">
+            <button type="button" aria-pressed={stockIn} className={`chip ${stockIn ? 'active' : ''}`}
+              onClick={() => setParam('stock', stockIn ? '' : 'in')}>In stock only</button>
+          </div>
+          {placeChips.length > 0 && (
+            <>
+              <span className="date-filter-label"><MapPin size={16} /> Pickup</span>
+              <div className="chips chips-small" role="radiogroup" aria-label="Pickup place">
+                <button type="button" role="radio" aria-checked={!pickup} className={`chip ${!pickup ? 'active' : ''}`}
+                  onClick={() => setParam('pickup', '')}>Anywhere</button>
+                {placeChips.slice(0, 12).map((pl) => {
+                  const on = pickup.toLowerCase() === pl.name.toLowerCase()
+                  return (
+                    <button key={pl.name} type="button" role="radio" aria-checked={on} className={`chip ${on ? 'active' : ''}`}
+                      onClick={() => setParam('pickup', on ? '' : pl.name)}>{pl.name}</button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="date-filter">
         <span className="date-filter-label"><CalendarDays size={16} /> Date</span>
         <div className="chips chips-small" role="radiogroup" aria-label="Filter by date">
@@ -222,13 +275,15 @@ export default function Listing() {
       <ErrorBox message={error} onRetry={() => load(1, true)} />
       {loading && items.length === 0 ? <Spinner /> : !error && items.length === 0 ? (
         <EmptyState
-          title={urlQ ? `No results for "${urlQ}"` : dateActive ? 'Nothing scheduled for these dates' : 'No announcements here yet'}
+          title={urlQ ? `No results for "${urlQ}"` : dateActive ? 'Nothing scheduled for these dates'
+            : sellFiltersActive ? 'Nothing matches these filters' : 'No announcements here yet'}
           text={urlQ ? 'Try a different keyword or browse all categories.'
             : dateActive ? 'Try another date range, or clear the date filter to see everything.'
+              : sellFiltersActive ? 'Try another pickup place, or show out-of-stock posts too.'
               : 'Check back soon, or post the first one.'}
-          action={dateActive ? (
+          action={dateActive || sellFiltersActive ? (
             <div className="empty-actions">
-              <button type="button" className="btn" onClick={clearDates}>Clear date filter</button>
+              <button type="button" className="btn" onClick={clearAllFilters}>Clear filters</button>
               <Link to={category ? `/create?category=${category.id}` : '/create'} className="btn btn-primary">Create post</Link>
             </div>
           ) : (

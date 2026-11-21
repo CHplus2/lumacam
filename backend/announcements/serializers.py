@@ -1,3 +1,4 @@
+import json
 import re
 
 from django.conf import settings
@@ -7,7 +8,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from .models import Announcement, Category
+from .models import Announcement, Category, PickupLocation
 
 ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP'}
 ALLOWED_SCHEMES = ['http', 'https']
@@ -27,7 +28,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'announcement_count')
+        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'sells_items', 'announcement_count')
         read_only_fields = ('slug',)
         extra_kwargs = {'name': {'validators': []}}  # uniqueness checked case-insensitively below
 
@@ -72,6 +73,49 @@ class CategorySerializer(serializers.ModelSerializer):
         return Category.objects.create(slug=slug, **validated_data)
 
 
+MAX_PICKUPS = 5
+
+
+def clean_place(raw):
+    return ' '.join(str(raw).split())
+
+
+class PickupTagsField(serializers.Field):
+    """Pickup places as a list of names.
+
+    Accepts a JSON list, or (from multipart forms) a JSON string such as
+    '["Block C lobby"]'. Sending an empty list clears the tags.
+    """
+    default_error_messages = {'invalid': 'Send pickup places as a list of names.'}
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            data = data.strip()
+            if not data:
+                return []
+            try:
+                data = json.loads(data)
+            except ValueError:
+                self.fail('invalid')
+        if not isinstance(data, list):
+            self.fail('invalid')
+        names, seen = [], set()
+        for raw in data:
+            name = clean_place(raw)
+            if not name or name.lower() in seen:
+                continue
+            if not 2 <= len(name) <= 40:
+                raise serializers.ValidationError(f'"{name[:40]}": pickup places must be 2-40 characters.')
+            seen.add(name.lower())
+            names.append(name)
+        if len(names) > MAX_PICKUPS:
+            raise serializers.ValidationError(f'Add at most {MAX_PICKUPS} pickup places.')
+        return names
+
+    def to_representation(self, value):
+        return [p.name for p in value.all()]
+
+
 class AnnouncementSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(
         queryset=Category.objects.filter(is_removed=False),
@@ -81,6 +125,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(write_only=True, required=False, allow_null=True)
     remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
     image_url = serializers.SerializerMethodField()
+    pickup_locations = PickupTagsField(required=False)
 
     class Meta:
         model = Announcement
@@ -88,8 +133,9 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'category', 'category_detail', 'publisher_name',
             'image', 'remove_image', 'image_url', 'contact_method', 'contact_info', 'external_url',
             'created_at', 'updated_at', 'expires_at', 'event_start', 'event_end',
+            'availability', 'stock_updated_at', 'pickup_locations',
         )
-        read_only_fields = ('created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'stock_updated_at')
 
     def get_image_url(self, obj):
         return obj.image.url if obj.image else None
@@ -156,8 +202,23 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         if end == start:
             attrs['event_end'] = None  # store single-day events with no end date
 
+    def _validate_selling(self, attrs):
+        """Stock status and pickup places only exist in categories that sell items."""
+        inst = self.instance
+        category = attrs.get('category', getattr(inst, 'category', None))
+        if category is None or not category.sells_items:
+            attrs['availability'] = ''
+            attrs['pickup_locations'] = []
+            return
+        current = getattr(inst, 'availability', '')
+        new = attrs.get('availability', current) or Announcement.Availability.AVAILABLE
+        attrs['availability'] = new
+        if inst is None or new != current:
+            attrs['stock_updated_at'] = timezone.now()
+
     def validate(self, attrs):
         self._validate_event(attrs)
+        self._validate_selling(attrs)
         method = attrs.get('contact_method', getattr(self.instance, 'contact_method', Announcement.ContactMethod.NONE))
         info = (attrs.get('contact_info', getattr(self.instance, 'contact_info', '')) or '').strip()
         if method == Announcement.ContactMethod.NONE:
@@ -183,11 +244,25 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             attrs['contact_info'] = info
         return attrs
 
+    @staticmethod
+    def _set_pickups(instance, names):
+        if names is None:
+            return
+        places = []
+        for name in names:
+            place = PickupLocation.objects.filter(name__iexact=name).first()
+            places.append(place or PickupLocation.objects.create(name=name))
+        instance.pickup_locations.set(places)
+
     def create(self, validated_data):
         validated_data.pop('remove_image', None)
-        return super().create(validated_data)
+        pickups = validated_data.pop('pickup_locations', None)
+        instance = super().create(validated_data)
+        self._set_pickups(instance, pickups)
+        return instance
 
     def update(self, instance, validated_data):
+        pickups = validated_data.pop('pickup_locations', None)
         remove = validated_data.pop('remove_image', False)
         old_image = instance.image.name if instance.image else None
         replacing = 'image' in validated_data and validated_data['image'] is not None
@@ -196,6 +271,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         elif 'image' in validated_data and validated_data['image'] is None:
             validated_data.pop('image')  # an empty file field means "keep the current image"
         instance = super().update(instance, validated_data)
+        self._set_pickups(instance, pickups)
         if old_image and old_image != (instance.image.name or None):
             instance.image.storage.delete(old_image)
         return instance

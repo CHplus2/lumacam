@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { CalendarDays, ExternalLink, Inbox, LoaderCircle, Mail, MessageCircle } from 'lucide-react'
+import { CalendarDays, ExternalLink, Inbox, LoaderCircle, Mail, MapPin, MessageCircle } from 'lucide-react'
+import { StockBadge } from './selling'
 import { ICONS, contactLink, fmtDate, fmtEventRange, parseISODate } from '../utils'
 
 export function Spinner({ label = 'Loading...' }) {
@@ -96,13 +97,14 @@ function QuickContact({ a }) {
 export function AnnouncementCard({ a, to, footer }) {
   const Icon = ICONS[a.category_detail?.icon]
   return (
-    <article className="card ann-card">
+    <article className={`card ann-card ${a.availability === 'out' ? 'is-out' : ''}`}>
       <Link to={to || `/announcements/${a.id}`} className="ann-link">
         <div className={`ann-thumb tone-${a.category_detail?.color || 'blue'}`}>
           {a.image_url
             ? <img src={a.image_url} alt="" loading="lazy" />
             : Icon && <Icon size={40} strokeWidth={1.6} />}
           {a.event_start && <DateTile start={a.event_start} end={a.event_end} />}
+          {a.availability && <StockBadge value={a.availability} className="on-image" />}
         </div>
         <div className="ann-body">
           <div className="ann-badges">
@@ -111,6 +113,12 @@ export function AnnouncementCard({ a, to, footer }) {
           </div>
           <h3 className="ann-title">{a.title}</h3>
           <p className="ann-desc">{a.description}</p>
+          {a.pickup_locations?.length > 0 && (
+            <p className="ann-place">
+              <MapPin size={14} />
+              <span>{a.pickup_locations[0]}{a.pickup_locations.length > 1 && ` +${a.pickup_locations.length - 1} more`}</span>
+            </p>
+          )}
           <p className="ann-meta">Posted by {a.publisher_name} · {fmtDate(a.created_at)}</p>
         </div>
       </Link>

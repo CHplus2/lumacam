@@ -22,6 +22,13 @@ export function CategoryFields({ value, onChange, errors }) {
       <Field label="Short description (optional)" htmlFor="cat_desc" error={errors.description}>
         <input id="cat_desc" value={value.description} maxLength={200} onChange={(e) => set('description', e.target.value)} />
       </Field>
+      <label className="check check-card">
+        <input type="checkbox" checked={Boolean(value.sells_items)} onChange={(e) => set('sells_items', e.target.checked)} />
+        <span>
+          <strong>People sell food or items here</strong>
+          <small className="muted block">Posts get a stock status (Available, Limited stock, Out of stock) and pickup places.</small>
+        </span>
+      </label>
       <div className="field">
         <span className="label">Icon</span>
         <div className="icon-picker" role="radiogroup" aria-label="Category icon">

@@ -11,7 +11,7 @@ from django.utils import timezone
 from PIL import Image, ImageDraw
 
 from accounts.models import User
-from announcements.models import Announcement, Category
+from announcements.models import Announcement, Category, PickupLocation
 
 PALETTE = {
     'food-drinks': ((251, 191, 120), (244, 114, 60)),
@@ -35,6 +35,14 @@ DEMO = [
     ('other', 'Lost: black umbrella near Lecture Hall B', 'Lost a black foldable umbrella near Lecture Hall B on Monday. Please contact me if found.', 'whatsapp', '60134445555', 0),
 ]
 
+
+# Stock status and pickup places for the selling posts.
+SELLING = {
+    'Homemade nasi lemak - daily pre-order': ('limited', ['Block C lobby']),
+    'Iced coffee & brownies, Fridays only': ('available', ['Library entrance']),
+    'Calculus textbook (9th ed.) - barely used': ('available', ['Library entrance', 'Student centre']),
+    'Wireless mouse + laptop stand bundle': ('out', ['Block C lobby']),
+}
 
 # Event windows for some demo posts: (start offset, end offset or None) in days from today.
 EVENT_DAYS = {
@@ -90,5 +98,10 @@ class Command(BaseCommand):
                 if not opts['no_images']:
                     ann.image.save('demo.jpg', make_image(slug, title), save=False)
                 ann.save()
+                if title in SELLING:
+                    ann.availability, places = SELLING[title]
+                    ann.stock_updated_at = timezone.now()
+                    ann.save(update_fields=['availability', 'stock_updated_at'])
+                    ann.pickup_locations.set([PickupLocation.objects.get_or_create(name=n)[0] for n in places])
         self.stdout.write(self.style.SUCCESS(
             'Demo data ready. Emergency admin at /django-admin/: admin / Admin12345!'))

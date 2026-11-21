@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Calendar, ExternalLink, Mail, MessageCircle, Pencil, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Spinner } from '../components/ui'
-import { contactLink, fmtDate, fmtDay, safeUrl, TRASH_DAYS } from '../utils'
+import { PickupTags, StockBadge, StockPicker } from '../components/selling'
+import { contactLink, fmtAgo, fmtDate, fmtDay, safeUrl, stockLabel, TRASH_DAYS } from '../utils'
 
 export default function Detail() {
   const { id } = useParams()
@@ -14,6 +15,8 @@ export default function Detail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState(false)
+  const [stockBusy, setStockBusy] = useState(false)
+  const [stockNote, setStockNote] = useState(null)
 
   useEffect(() => {
     setLoading(true); setNotFound(false); setError('')
@@ -31,6 +34,21 @@ export default function Detail() {
   const contact = contactLink(a)
   const formUrl = safeUrl(a.external_url)
   const ContactIcon = a.contact_method === 'email' ? Mail : a.contact_method === 'whatsapp' ? MessageCircle : ExternalLink
+
+  // One tap: update right away and roll back if the server says no.
+  const setStock = async (availability) => {
+    const before = a
+    setA({ ...a, availability, stock_updated_at: new Date().toISOString() })
+    setStockBusy(true); setStockNote(null)
+    try {
+      const { data } = await api.patch(`/announcements/${a.id}/`, { availability })
+      setA(data)
+      setStockNote({ ok: true, text: `Marked as ${stockLabel(availability).toLowerCase()}.` })
+    } catch (e) {
+      setA(before)
+      setStockNote({ ok: false, text: parseError(e).message })
+    } finally { setStockBusy(false) }
+  }
 
   const remove = async () => {
     if (!window.confirm(`Move "${a.title}" to the Trash? It disappears for everyone, and you can restore it from the Trash for ${TRASH_DAYS} days.`)) return
@@ -54,6 +72,7 @@ export default function Detail() {
         <div className="ann-badges">
           <CategoryBadge category={a.category_detail} />
           {a.event_start && <EventBadge start={a.event_start} end={a.event_end} />}
+          {a.availability && <StockBadge value={a.availability} />}
         </div>
         <h1>{a.title}</h1>
         <p className="ann-meta">
@@ -61,6 +80,26 @@ export default function Detail() {
           {a.expires_at && <> · <Calendar size={14} className="inline" /> Expires {fmtDay(a.expires_at)}</>}
         </p>
         <p className="detail-desc">{a.description}</p>
+
+        {a.pickup_locations?.length > 0 && (
+          <div className="detail-section">
+            <h3>Pickup</h3>
+            <PickupTags places={a.pickup_locations} categorySlug={a.category_detail?.slug} />
+          </div>
+        )}
+
+        {a.category_detail?.sells_items && (
+          <div className="detail-section stock-box">
+            <div className="row stock-head">
+              <h3>Stock</h3>
+              {a.stock_updated_at && <span className="muted small">Updated {fmtAgo(a.stock_updated_at)}</span>}
+            </div>
+            <StockPicker value={a.availability} onChange={setStock} disabled={stockBusy} />
+            {stockNote
+              ? <small className={stockNote.ok ? 'stock-saved' : 'field-error'} role="status">{stockNote.text}</small>
+              : <small className="muted">Selling this? Tap to update it for everyone.</small>}
+          </div>
+        )}
 
         {(contact || formUrl) && (
         <div className="contact-box">

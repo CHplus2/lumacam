@@ -27,7 +27,7 @@ export const ICONS = {
 }
 
 export const CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
-export const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue' }
+export const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue', sells_items: false }
 
 export const CONTACT_METHODS = [
   { value: 'none', label: 'No contact', placeholder: '', hint: '' },
@@ -35,6 +35,27 @@ export const CONTACT_METHODS = [
   { value: 'email', label: 'Email', placeholder: 'you@example.com', hint: '' },
   { value: 'link', label: 'External link', placeholder: 'https://...', hint: 'e.g. an Instagram page or Google Form' },
 ]
+
+// Stock status for posts in categories that sell food or items.
+export const STOCK = [
+  { value: 'available', label: 'Available' },
+  { value: 'limited', label: 'Limited stock' },
+  { value: 'out', label: 'Out of stock' },
+]
+export const stockLabel = (value) => STOCK.find((s) => s.value === value)?.label || ''
+export const MAX_PICKUPS = 5
+
+/** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago". */
+export function fmtAgo(iso) {
+  if (!iso) return ''
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours} h ago`
+  const days = Math.round(hours / 24)
+  return days === 1 ? 'yesterday' : `${days} days ago`
+}
 
 // Keep in sync with TRASH_DAYS in backend settings.
 export const TRASH_DAYS = 30

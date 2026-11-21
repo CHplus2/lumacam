@@ -543,3 +543,102 @@ class FeedbackFilterTests(BaseCase):
         expected = [by_event.id, single.id, by_expiry.id, open_ended.id]
         self.assertEqual(self.ids('?ordering=ending'), expected)
         self.assertEqual(self.ids('?ordering=expiring'), expected)  # old name still works
+
+
+class SellingTests(BaseCase):
+    """Stock status and pickup places for categories that sell items."""
+
+    def setUp(self):
+        super().setUp()
+        self.market = Category.objects.get(slug='marketplace')
+
+    def post(self, **kw):
+        r = self.client.post('/api/announcements/', self.payload(**kw), format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        return r.data
+
+    def ids(self, query):
+        r = self.client.get(f'/api/announcements/{query}')
+        self.assertEqual(r.status_code, 200, r.data)
+        return [a['id'] for a in r.data['results']]
+
+    def test_selling_categories_flagged(self):
+        flags = {c['slug']: c['sells_items'] for c in self.client.get('/api/categories/').data}
+        self.assertEqual({k for k, v in flags.items() if v}, {'food-drinks', 'marketplace'})
+
+    def test_defaults_to_available_with_timestamp(self):
+        a = self.post()
+        self.assertEqual(a['availability'], 'available')
+        self.assertTrue(a['stock_updated_at'])
+
+    def test_non_selling_category_ignores_stock_and_pickups(self):
+        a = self.post(category=self.other_cat.id, availability='limited', pickup_locations=['Block C'])
+        self.assertEqual((a['availability'], a['pickup_locations'], a['stock_updated_at']), ('', [], None))
+
+    def test_one_tap_stock_update(self):
+        a = self.post()
+        first = a['stock_updated_at']
+        r = self.client.patch(f"/api/announcements/{a['id']}/", {'availability': 'out'}, format='json')
+        self.assertEqual((r.status_code, r.data['availability']), (200, 'out'))
+        self.assertGreater(r.data['stock_updated_at'], first)
+        same = self.client.patch(f"/api/announcements/{a['id']}/", {'title': 'Renamed post'}, format='json')
+        self.assertEqual(same.data['stock_updated_at'], r.data['stock_updated_at'])  # unchanged stock
+        self.assertEqual(self.client.patch(f"/api/announcements/{a['id']}/", {'availability': 'gone'}, format='json').status_code, 400)
+
+    def test_pickup_tags_are_cleaned_deduplicated_and_shared(self):
+        a = self.post(pickup_locations=['  Block  C lobby ', 'block c lobby', 'Library'])
+        self.assertEqual(a['pickup_locations'], ['Block C lobby', 'Library'])
+        b = self.post(pickup_locations=['BLOCK C LOBBY'])
+        self.assertEqual(b['pickup_locations'], ['Block C lobby'])  # reuses the existing tag
+        from announcements.models import PickupLocation
+        self.assertEqual(PickupLocation.objects.count(), 2)
+
+    def test_pickup_validation(self):
+        bad = lambda tags: self.client.post('/api/announcements/', self.payload(pickup_locations=tags), format='json')  # noqa: E731
+        self.assertEqual(bad(['x']).status_code, 400)
+        self.assertEqual(bad(['p' * 41]).status_code, 400)
+        self.assertEqual(bad([f'Place {i}' for i in range(6)]).status_code, 400)
+        self.assertEqual(bad('not a list').status_code, 400)
+
+    def test_pickups_via_multipart_json_string_and_clearing(self):
+        r = self.client.post('/api/announcements/', {**self.payload(), 'pickup_locations': '["Hostel A", "Gate 2"]'}, format='multipart')
+        self.assertEqual(r.data['pickup_locations'], ['Gate 2', 'Hostel A'])
+        r = self.client.patch(f"/api/announcements/{r.data['id']}/", {'pickup_locations': '[]'}, format='multipart')
+        self.assertEqual(r.data['pickup_locations'], [])
+
+    def test_edit_without_pickups_keeps_them(self):
+        a = self.post(pickup_locations=['Hostel A'])
+        r = self.client.patch(f"/api/announcements/{a['id']}/", {'title': 'Updated title'}, format='json')
+        self.assertEqual(r.data['pickup_locations'], ['Hostel A'])
+
+    def test_moving_to_non_selling_category_clears_selling_fields(self):
+        a = self.post(pickup_locations=['Hostel A'], availability='limited')
+        r = self.client.patch(f"/api/announcements/{a['id']}/", {'category': self.other_cat.id}, format='json')
+        self.assertEqual((r.data['availability'], r.data['pickup_locations']), ('', []))
+
+    def test_filters_and_search(self):
+        a = self.post(title='Kuih at Hostel A', pickup_locations=['Hostel A'])
+        b = self.post(title='Fried rice', category=self.market.id, pickup_locations=['Gate 2'], availability='out')
+        c = self.post(title='Laksa')
+        self.assertEqual(self.ids('?pickup=hostel%20a'), [a['id']])
+        self.assertEqual(set(self.ids('?stock=in')), {a['id'], c['id']})
+        self.assertEqual(self.ids('?search=gate'), [b['id']])  # pickup places are searchable
+        self.assertEqual(self.ids('?search=hostel'), [a['id']])  # no duplicates from the join
+
+    def test_pickup_location_list(self):
+        self.post(pickup_locations=['Hostel A', 'Gate 2'])
+        self.post(pickup_locations=['Hostel A'])
+        self.post(category=self.market.id, pickup_locations=['Library'])
+        trashed = self.post(pickup_locations=['Old spot'])
+        self.client.delete(f"/api/announcements/{trashed['id']}/")
+        data = self.client.get('/api/pickup-locations/').data
+        self.assertEqual([(r['name'], r['count']) for r in data], [('Hostel A', 2), ('Gate 2', 1), ('Library', 1)])
+        food = self.client.get('/api/pickup-locations/?category=food-drinks').data
+        self.assertEqual([r['name'] for r in food], ['Hostel A', 'Gate 2'])
+
+    def test_user_category_can_sell_items(self):
+        cat = self.client.post('/api/categories/', {'name': 'Preloved Clothes', 'icon': 'shirt', 'color': 'rose',
+                                                    'sells_items': True}).data
+        self.assertTrue(cat['sells_items'])
+        a = self.post(category=cat['id'], pickup_locations=['Hostel B'])
+        self.assertEqual((a['availability'], a['pickup_locations']), ('available', ['Hostel B']))

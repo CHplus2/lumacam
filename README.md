@@ -62,6 +62,15 @@ Items are erased for good `TRASH_DAYS` (default 30) after deletion. A category i
 
 Set `DATABASE_URL`. With `DEBUG=false` the server applies pending migrations itself on start (see `config/automigrate.py`); you can also run `python manage.py migrate` manually. The models use only portable field types.
 
+### Selling categories
+
+Categories with `sells_items` (Food & Drinks and Student Marketplace, or any new category with "People sell food or items here" ticked) add two things to their posts:
+
+- **Stock status:** Available, Limited stock or Out of stock, switchable in one tap on the post page, with "Updated … ago". Out-of-stock cards are greyed out.
+- **Pickup places:** up to 5 free-text tags (hostel blocks, campus spots), shared between posts so they work as filters and suggestions, and included in search.
+
+Moving a post to a non-selling category clears both.
+
 ### Images
 
 Uploaded images are stored in the database (`announcements/storage.py`) and served from `/media/...`, so they work on hosts without a persistent disk such as Vercel. The frontend downsizes large photos before upload because Vercel rejects request bodies over 4.5MB; the backend accepts JPEG, PNG or WebP up to 4MB. Use `python manage.py seed_demo --no-images` to skip the placeholder images.
@@ -100,15 +109,16 @@ All endpoints are public and need no login or CSRF token.
 | Method & path | Notes |
 |---|---|
 | `GET /categories/` | with live announcement counts |
-| `POST /categories/` | `name`, `description`, `icon`, `color`; live immediately, rate limited |
+| `POST /categories/` | `name`, `description`, `icon`, `color`, `sells_items`; live immediately, rate limited |
 | `DELETE /categories/:id/` | only when the category has no posts (else 400); moves it to the Trash |
-| `GET /announcements/?category=&search=&date_from=&date_to=&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day |
-| `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; live immediately, rate limited |
+| `GET /announcements/?category=&search=&date_from=&date_to=&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day. Selling categories: `stock=in` hides out-of-stock posts, `pickup=<name>` filters by pickup place |
+| `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; in selling categories `availability` (`available`/`limited`/`out`) and `pickup_locations` (list, or a JSON string in multipart, max 5); live immediately, rate limited |
 | `GET /announcements/:id/` | |
 | `PATCH /announcements/:id/` | multipart or JSON; `remove_image=true` drops the image; rate limited |
 | `DELETE /announcements/:id/` | moves the post to the Trash; rate limited |
 | `GET /trash/announcements/?search=`, `GET /trash/categories/` | Trash contents with `removed_at` and `purge_at`; also erases expired items |
 | `POST /trash/announcements/:id/restore/`, `POST /trash/categories/:id/restore/` | restore; a post brings its trashed category back too |
+| `GET /pickup-locations/?category=` | pickup places used by live posts, most used first |
 | `GET /media/<path>` | uploaded images |
 
 ## Manual test walkthrough
@@ -124,6 +134,8 @@ All endpoints are public and need no login or CSRF token.
 9. Resize the browser below 720px. The top nav becomes a bottom bar with a prominent (+) Create button.
 
 10. Open a category and click **Follow** (or tick categories in the bell menu). Post something new in it; within a minute the bell shows a red count. Click **Mark all as seen** to clear it.
+
+11. Open **Food & Drinks**, open a post and tap **Out of stock** under Stock. The card greys out and shows the badge; **In stock only** on the category page hides it. Tap a pickup place chip (e.g. "Block C lobby") to see everything collected there.
 
 ## Limitations
 
