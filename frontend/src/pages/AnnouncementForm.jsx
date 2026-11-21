@@ -4,7 +4,7 @@ import { ImagePlus, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { EmptyState, ErrorBox, Spinner } from '../components/ui'
-import { CONTACT_METHODS, emptyCategory } from '../utils'
+import { CONTACT_METHODS, emptyCategory, todayISO } from '../utils'
 import { CategoryFields, Field } from '../components/fields'
 import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
@@ -12,7 +12,7 @@ const NEW_CATEGORY = '__new__'
 const MAX_PICK_MB = 20 // larger photos are downsized before upload
 const empty = {
   publisher_name: '', title: '', category: '', description: '', contact_method: 'none',
-  contact_info: '', external_url: '', expires_at: '',
+  contact_info: '', external_url: '', expires_at: '', event_start: '', event_end: '',
 }
 
 export default function AnnouncementForm() {
@@ -48,6 +48,7 @@ export default function AnnouncementForm() {
           publisher_name: data.publisher_name, title: data.title, category: String(data.category),
           description: data.description, contact_method: data.contact_method, contact_info: data.contact_info,
           external_url: data.external_url || '', expires_at: data.expires_at || '',
+          event_start: data.event_start || '', event_end: data.event_end || '',
         })
         setExistingImage(data.image_url)
       })
@@ -113,7 +114,7 @@ export default function AnnouncementForm() {
       const body = new FormData()
       Object.entries({ ...form, category: categoryId }).forEach(([k, v]) => {
         // On create, skip empty optional fields; on edit, send them so they can be cleared.
-        if (!editing && (k === 'expires_at' || k === 'external_url') && !v) return
+        if (!editing && ['expires_at', 'external_url', 'event_start', 'event_end'].includes(k) && !v) return
         body.append(k, v)
       })
       if (file) body.append('image', file)
@@ -151,7 +152,7 @@ export default function AnnouncementForm() {
   }
 
   const shownImage = preview || (removeImage ? null : existingImage)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
 
   return (
     <form className="card form" onSubmit={submit} noValidate>
@@ -175,6 +176,25 @@ export default function AnnouncementForm() {
         </select>
       </Field>
       {form.category === NEW_CATEGORY && <div className="new-cat"><CategoryFields value={newCat} onChange={setNewCat} errors={catErrors} /></div>}
+
+      <div className="field">
+        <span className="label">When (optional)</span>
+        <div className="grid-2">
+          <Field label="Start date" htmlFor="event_start" error={fields.event_start}>
+            <input id="event_start" type="date" value={form.event_start}
+              onChange={(e) => setForm((f) => ({
+                ...f, event_start: e.target.value,
+                // Keep the range valid if the start moves past the end.
+                event_end: f.event_end && e.target.value && f.event_end < e.target.value ? '' : f.event_end,
+              }))} />
+          </Field>
+          <Field label="End date (if more than one day)" htmlFor="event_end" error={fields.event_end}>
+            <input id="event_end" type="date" min={form.event_start || today} value={form.event_end}
+              disabled={!form.event_start} onChange={set('event_end')} />
+          </Field>
+        </div>
+        <small className="muted">For events, deadlines or preorders, so people can find it by date. Leave empty if it doesn&apos;t apply.</small>
+      </div>
 
       <Field label="Description" htmlFor="description" error={fields.description} hint={`${form.description.length}/3000`}>
         <textarea id="description" rows={6} value={form.description} onChange={set('description')} maxLength={3000} required
@@ -211,7 +231,8 @@ export default function AnnouncementForm() {
         <Field label="Registration / form link (optional)" htmlFor="external_url" error={fields.external_url}>
           <input id="external_url" type="url" value={form.external_url} onChange={set('external_url')} placeholder="https://" />
         </Field>
-        <Field label="Expiry date (optional)" htmlFor="expires_at" error={fields.expires_at}>
+        <Field label="Hide after (optional)" htmlFor="expires_at" error={fields.expires_at}
+          hint={form.event_start ? 'If empty, the post is hidden after the event ends.' : 'If empty, the post stays up.'}>
           <input id="expires_at" type="date" min={today} value={form.expires_at} onChange={set('expires_at')} />
         </Field>
       </div>

@@ -88,7 +88,7 @@ cd backend && source .venv/bin/activate
 python manage.py test
 ```
 
-Covers posting without login and validation (optional contact, URLs, images), editing (including replacing, removing and keeping images, and clearing optional fields), delete-as-hide, image storage and serving, user-created categories and delete rules, rate limits, category filter, search, ordering, and a live-HTTP post/edit/delete flow.
+Covers posting without login and validation (optional contact, URLs, images), editing (including replacing, removing and keeping images, and clearing optional fields), event dates (validation, auto-expiry, date-range overlap, upcoming order), delete-as-hide, image storage and serving, user-created categories and delete rules, rate limits, category filter, search, ordering, and a live-HTTP post/edit/delete flow.
 
 ## API overview (`/api`)
 
@@ -99,8 +99,8 @@ All endpoints are public and need no login or CSRF token.
 | `GET /categories/` | with live announcement counts |
 | `POST /categories/` | `name`, `description`, `icon`, `color`; live immediately, rate limited |
 | `DELETE /categories/:id/` | only when the category has no posts (else 400); hides it, restorable |
-| `GET /announcements/?category=&search=&ordering=newest\|oldest\|expiring&page=` | live and unexpired only |
-| `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); live immediately, rate limited |
+| `GET /announcements/?category=&search=&date_from=&date_to=&ordering=newest\|upcoming\|oldest\|expiring&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming` |
+| `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; live immediately, rate limited |
 | `GET /announcements/:id/` | |
 | `PATCH /announcements/:id/` | multipart or JSON; `remove_image=true` drops the image; rate limited |
 | `DELETE /announcements/:id/` | hides the post (restorable in `/django-admin/`); rate limited |
@@ -112,10 +112,11 @@ All endpoints are public and need no login or CSRF token.
 2. Click **Create Announcement** (no login), fill in your name and details, add a photo, and submit. Click **View announcement**: it is already on the dashboard.
 3. On the announcement, click **Edit**, change the title or replace the photo, and save.
 4. Click a category card to verify filtering, use the search bar to verify search, and try the sort dropdown.
-5. Use the contact button (WhatsApp, email or link). External links open in a new tab with `rel="noopener noreferrer"`.
-6. Open **Categories** and click **New category**, pick a name, icon and colour, and save. The card appears on the home and Categories pages. Click its bin icon to delete it; a category that still has posts refuses with a message.
-7. Click **Delete** on a post. It disappears; restore it from `/django-admin/` if you like.
-8. Resize the browser below 720px. The top nav becomes a bottom bar with a prominent (+) Create button.
+5. Give a post a **When** date, then on Explore pick **Today**, **Next 7 days**, **Next 30 days** or **Pick dates**. Only posts whose dates overlap the range show, soonest first. A post with a date but no "Hide after" date disappears the day after its event ends.
+6. Use the contact button (WhatsApp, email or link). External links open in a new tab with `rel="noopener noreferrer"`.
+7. Open **Categories** and click **New category**, pick a name, icon and colour, and save. The card appears on the home and Categories pages. Click its bin icon to delete it; a category that still has posts refuses with a message.
+8. Click **Delete** on a post. It disappears; restore it from `/django-admin/` if you like.
+9. Resize the browser below 720px. The top nav becomes a bottom bar with a prominent (+) Create button.
 
 ## Limitations
 

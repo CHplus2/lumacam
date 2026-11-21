@@ -1,16 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Search, Trash2, X } from 'lucide-react'
+import { CalendarDays, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
-import { ICONS, categoryDeleteBlocker } from '../utils'
+import { ICONS, categoryDeleteBlocker, fmtEventRange, quickRange, todayISO } from '../utils'
 
 const SORTS = [
   { value: 'newest', label: 'Newest first' },
+  { value: 'upcoming', label: 'Upcoming first' },
   { value: 'oldest', label: 'Oldest first' },
   { value: 'expiring', label: 'Expiring soon' },
 ]
+
+const WHEN = [
+  { value: '', label: 'Any date' },
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'Next 7 days' },
+  { value: 'month', label: 'Next 30 days' },
+  { value: 'custom', label: 'Pick dates' },
+]
+const DATE_PARAMS = ['when', 'from', 'to']
+
+/** Read the date filter from the URL as { when, from, to } (from/to may be empty). */
+function readDateFilter(params) {
+  const when = params.get('when') || ''
+  if (when === 'custom') return { when, from: params.get('from') || '', to: params.get('to') || '' }
+  const range = quickRange(when)
+  return range ? { when, ...range } : { when: '', from: '', to: '' }
+}
 
 export default function Listing() {
   const { slug } = useParams()
@@ -19,7 +37,11 @@ export default function Listing() {
   const initialQ = params.get('q') || ''
   const [q, setQ] = useState(initialQ)
   const debouncedQ = useDebounced(q)
-  const ordering = params.get('ordering') || 'newest'
+  const dates = readDateFilter(params)
+  const dateActive = Boolean(dates.from || dates.to)
+  // "What's on soonest" is the natural order once you filter by date.
+  const defaultOrdering = dateActive ? 'upcoming' : 'newest'
+  const ordering = params.get('ordering') || defaultOrdering
   const { categories, reload: reloadCategories } = useCategories()
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -54,7 +76,10 @@ export default function Listing() {
     setLoading(true); setError('')
     try {
       const { data } = await api.get('/announcements/', {
-        params: { category: slug || undefined, search: urlQ || undefined, ordering, page: pageNo },
+        params: {
+          category: slug || undefined, search: urlQ || undefined, ordering, page: pageNo,
+          date_from: dates.from || undefined, date_to: dates.to || undefined,
+        },
       })
       if (myId !== requestId.current) return // a newer request superseded this one
       setItems((prev) => (replace ? data.results : [...prev, ...data.results]))
@@ -65,15 +90,41 @@ export default function Listing() {
     } finally {
       if (myId === requestId.current) setLoading(false)
     }
-  }, [slug, urlQ, ordering])
+  }, [slug, urlQ, ordering, dates.from, dates.to])
 
   useEffect(() => { load(1, true) }, [load])
 
   const setSort = (value) => {
     const next = new URLSearchParams(params)
-    if (value === 'newest') next.delete('ordering'); else next.set('ordering', value)
+    if (value === defaultOrdering) next.delete('ordering'); else next.set('ordering', value)
     setParams(next, { replace: true })
   }
+
+  const setDateFilter = (patch) => {
+    const next = new URLSearchParams(params)
+    const merged = { ...dates, ...patch }
+    DATE_PARAMS.forEach((k) => next.delete(k))
+    if (merged.when) next.set('when', merged.when)
+    if (merged.when === 'custom') {
+      if (merged.from) next.set('from', merged.from)
+      if (merged.to) next.set('to', merged.to)
+    }
+    // Let the sort fall back to the default for the new state.
+    if (['newest', 'upcoming'].includes(next.get('ordering'))) next.delete('ordering')
+    setParams(next, { replace: true })
+  }
+  const pickWhen = (when) => setDateFilter(when === 'custom'
+    ? { when, from: dates.from || todayISO(), to: dates.to }
+    : { when, from: '', to: '' })
+  const clearDates = () => setDateFilter({ when: '', from: '', to: '' })
+
+  // Keep the date filter when switching between categories.
+  const keepDates = (() => {
+    const kept = new URLSearchParams()
+    DATE_PARAMS.forEach((k) => params.get(k) && kept.set(k, params.get(k)))
+    const qs = kept.toString()
+    return qs ? `?${qs}` : ''
+  })()
 
   const deleteCategory = async () => {
     const blocker = categoryDeleteBlocker(category)
@@ -102,9 +153,9 @@ export default function Listing() {
       </div>
 
       <div className="chips" role="tablist" aria-label="Categories">
-        <Link to="/explore" className={`chip ${!slug ? 'active' : ''}`}>All</Link>
+        <Link to={`/explore${keepDates}`} className={`chip ${!slug ? 'active' : ''}`}>All</Link>
         {categories.map((c) => (
-          <Link key={c.id} to={`/category/${c.slug}`} className={`chip ${slug === c.slug ? 'active' : ''}`}>{c.name}</Link>
+          <Link key={c.id} to={`/category/${c.slug}${keepDates}`} className={`chip ${slug === c.slug ? 'active' : ''}`}>{c.name}</Link>
         ))}
       </div>
 
@@ -120,17 +171,55 @@ export default function Listing() {
         </select>
       </div>
 
+      <div className="date-filter">
+        <span className="date-filter-label"><CalendarDays size={16} /> Date</span>
+        <div className="chips chips-small" role="radiogroup" aria-label="Filter by date">
+          {WHEN.map((w) => (
+            <button key={w.value} type="button" role="radio" aria-checked={dates.when === w.value}
+              className={`chip ${dates.when === w.value ? 'active' : ''}`} onClick={() => pickWhen(w.value)}>
+              {w.label}
+            </button>
+          ))}
+        </div>
+        {dates.when === 'custom' && (
+          <div className="date-range">
+            <label className="sr-only" htmlFor="date_from">From</label>
+            <input id="date_from" type="date" value={dates.from} max={dates.to || undefined}
+              onChange={(e) => setDateFilter({ from: e.target.value })} />
+            <span className="muted">to</span>
+            <label className="sr-only" htmlFor="date_to">To</label>
+            <input id="date_to" type="date" value={dates.to} min={dates.from || undefined}
+              onChange={(e) => setDateFilter({ to: e.target.value })} />
+          </div>
+        )}
+      </div>
+      {dateActive && (
+        <p className="muted small date-note">
+          Showing posts happening {dates.from && dates.to
+            ? (dates.from === dates.to ? `on ${fmtEventRange(dates.from)}` : `${fmtEventRange(dates.from, dates.to)}`)
+            : dates.from ? `from ${fmtEventRange(dates.from)}` : `until ${fmtEventRange(dates.to)}`}.
+          {' '}Posts without a date are hidden. <button type="button" className="link-btn" onClick={clearDates}>Clear date filter</button>
+        </p>
+      )}
+
       <ErrorBox message={error} onRetry={() => load(1, true)} />
       {loading && items.length === 0 ? <Spinner /> : !error && items.length === 0 ? (
         <EmptyState
-          title={urlQ ? `No results for "${urlQ}"` : 'No announcements here yet'}
-          text={urlQ ? 'Try a different keyword or browse all categories.' : 'Check back soon, or post the first one.'}
-          action={
+          title={urlQ ? `No results for "${urlQ}"` : dateActive ? 'Nothing scheduled for these dates' : 'No announcements here yet'}
+          text={urlQ ? 'Try a different keyword or browse all categories.'
+            : dateActive ? 'Try another date range, or clear the date filter to see everything.'
+              : 'Check back soon, or post the first one.'}
+          action={dateActive ? (
+            <div className="empty-actions">
+              <button type="button" className="btn" onClick={clearDates}>Clear date filter</button>
+              <Link to={category ? `/create?category=${category.id}` : '/create'} className="btn btn-primary">Create post</Link>
+            </div>
+          ) : (
             <div className="empty-actions">
               <Link to="/categories" className="btn">All categories</Link>
               <Link to={category ? `/create?category=${category.id}` : '/create'} className="btn btn-primary">Create post</Link>
             </div>
-          }
+          )}
         />
       ) : (
         <>

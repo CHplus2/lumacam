@@ -1,7 +1,11 @@
+from datetime import date
+
 from django.db.models import Count, F, Q
+from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.utils import timezone
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
@@ -13,14 +17,48 @@ ORDERINGS = {
     'newest': '-created_at',
     'oldest': 'created_at',
     'expiring': 'expires_at',
+    'upcoming': 'event_start',
 }
+
+
+def not_expired_q(today, prefix=''):
+    """Still relevant today: before its expiry date, or (without one) not past its event."""
+    f = lambda name: prefix + name  # noqa: E731
+    return (Q(**{f('expires_at__gte'): today})
+            | Q(**{f('expires_at__isnull'): True, f('event_start__isnull'): True})
+            | Q(**{f('expires_at__isnull'): True, f('event_end__gte'): today})
+            | Q(**{f('expires_at__isnull'): True, f('event_end__isnull'): True, f('event_start__gte'): today}))
 
 
 def public_queryset():
     today = timezone.localdate()
     return (Announcement.objects.select_related('category')
             .filter(status=Announcement.Status.APPROVED, category__is_removed=False)
-            .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=today)))
+            .filter(not_expired_q(today)))
+
+
+def parse_day(params, name):
+    raw = params.get(name)
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        raise ValidationError({name: 'Use the format YYYY-MM-DD.'})
+
+
+def apply_date_range(qs, date_from, date_to):
+    """Keep posts whose event dates overlap [date_from, date_to]; undated posts drop out."""
+    if not (date_from or date_to):
+        return qs
+    if date_from and date_to and date_to < date_from:
+        raise ValidationError({'date_to': 'The end date must be on or after the start date.'})
+    qs = qs.filter(event_start__isnull=False).annotate(_event_last=Coalesce('event_end', 'event_start'))
+    if date_to:
+        qs = qs.filter(event_start__lte=date_to)
+    if date_from:
+        qs = qs.filter(_event_last__gte=date_from)
+    return qs
 
 
 def apply_search(qs, term):
@@ -42,8 +80,7 @@ class CategoryListView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         today = timezone.localdate()
-        live = Q(announcements__status=Announcement.Status.APPROVED) & (
-            Q(announcements__expires_at__isnull=True) | Q(announcements__expires_at__gte=today))
+        live = Q(announcements__status=Announcement.Status.APPROVED) & not_expired_q(today, 'announcements__')
         # Meta.ordering is ignored on aggregate queries, so order explicitly.
         return (Category.objects.filter(is_removed=False)
                 .annotate(announcement_count=Count('announcements', filter=live))
@@ -96,9 +133,13 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
         if p.get('category'):
             qs = qs.filter(category__slug=p['category'])
         qs = apply_search(qs, p.get('search'))
-        order = ORDERINGS.get(p.get('ordering'), '-created_at')
-        if order == 'expires_at':
-            return qs.order_by(F('expires_at').asc(nulls_last=True), '-created_at')
+        date_from, date_to = parse_day(p, 'date_from'), parse_day(p, 'date_to')
+        qs = apply_date_range(qs, date_from, date_to)
+        # With a date filter, "what's on soonest" is the natural default order.
+        default = 'upcoming' if (date_from or date_to) else 'newest'
+        order = ORDERINGS.get(p.get('ordering') or default, '-created_at')
+        if order in ('expires_at', 'event_start'):
+            return qs.order_by(F(order).asc(nulls_last=True), '-created_at', '-id')
         return qs.order_by(order, '-id')
 
     def perform_create(self, serializer):

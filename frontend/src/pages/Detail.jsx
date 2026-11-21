@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Calendar, ExternalLink, Mail, MessageCircle, Pencil, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
-import { CategoryBadge, EmptyState, ErrorBox, Spinner } from '../components/ui'
+import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Spinner } from '../components/ui'
 import { contactLink, fmtDate, fmtDay, safeUrl } from '../utils'
 
 export default function Detail() {
@@ -51,7 +51,10 @@ export default function Detail() {
       {a.image_url && <img className="detail-img" src={a.image_url} alt={a.title} />}
 
       <div className="detail-main card">
-        <CategoryBadge category={a.category_detail} />
+        <div className="ann-badges">
+          <CategoryBadge category={a.category_detail} />
+          {a.event_start && <EventBadge start={a.event_start} end={a.event_end} />}
+        </div>
         <h1>{a.title}</h1>
         <p className="ann-meta">
           Posted by <strong>{a.publisher_name}</strong> on {fmtDate(a.created_at)}

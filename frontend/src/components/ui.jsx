@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { Inbox, LoaderCircle } from 'lucide-react'
-import { ICONS, fmtDate } from '../utils'
+import { CalendarDays, Inbox, LoaderCircle } from 'lucide-react'
+import { ICONS, fmtDate, fmtEventRange } from '../utils'
 
 export function Spinner({ label = 'Loading...' }) {
   return (
@@ -57,6 +57,10 @@ export function CategoryCard({ category, preview = false }) {
   )
 }
 
+export function EventBadge({ start, end }) {
+  return <span className="event-badge"><CalendarDays size={13} />{fmtEventRange(start, end)}</span>
+}
+
 export function AnnouncementCard({ a, to, footer }) {
   const Icon = ICONS[a.category_detail?.icon]
   return (
@@ -68,7 +72,10 @@ export function AnnouncementCard({ a, to, footer }) {
             : Icon && <Icon size={40} strokeWidth={1.6} />}
         </div>
         <div className="ann-body">
-          <CategoryBadge category={a.category_detail} />
+          <div className="ann-badges">
+            <CategoryBadge category={a.category_detail} />
+            {a.event_start && <EventBadge start={a.event_start} end={a.event_end} />}
+          </div>
           <h3 className="ann-title">{a.title}</h3>
           <p className="ann-desc">{a.description}</p>
           <p className="ann-meta">{a.publisher_name} · {fmtDate(a.created_at)}</p>

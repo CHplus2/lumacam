@@ -62,6 +62,10 @@ class Announcement(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     expires_at = models.DateField(null=True, blank=True)
+    # When the thing happens (event, deadline, preorder window). Optional.
+    # Without an expiry date, the post is hidden the day after the event ends.
+    event_start = models.DateField(null=True, blank=True, db_index=True)
+    event_end = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

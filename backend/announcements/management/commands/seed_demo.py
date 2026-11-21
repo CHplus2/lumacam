@@ -36,6 +36,14 @@ DEMO = [
 ]
 
 
+# Event windows for some demo posts: (start offset, end offset or None) in days from today.
+EVENT_DAYS = {
+    'Campus Hackathon 2026 - register now': (5, 6),
+    'Intro to Cloud Computing workshop': (2, None),
+    'FYP survey: students and sleep habits': (0, 14),
+    'Volunteer: orientation week helpers': (10, 14),
+}
+
 NAMES = ['Aina', 'Daniel', 'Priya', 'Wei Jie', 'Siti']
 
 
@@ -75,6 +83,9 @@ class Command(BaseCommand):
                     publisher_name=NAMES[i % len(NAMES)], contact_method=method, contact_info=info,
                     status=Announcement.Status.APPROVED,
                     expires_at=today + timedelta(days=days) if days else None,
+                    event_start=today + timedelta(days=EVENT_DAYS[title][0]) if title in EVENT_DAYS else None,
+                    event_end=(today + timedelta(days=EVENT_DAYS[title][1])
+                               if title in EVENT_DAYS and EVENT_DAYS[title][1] is not None else None),
                 )
                 if not opts['no_images']:
                     ann.image.save('demo.jpg', make_image(slug, title), save=False)

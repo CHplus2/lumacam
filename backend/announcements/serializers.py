@@ -86,7 +86,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'title', 'description', 'category', 'category_detail', 'publisher_name',
             'image', 'remove_image', 'image_url', 'contact_method', 'contact_info', 'external_url',
-            'created_at', 'updated_at', 'expires_at',
+            'created_at', 'updated_at', 'expires_at', 'event_start', 'event_end',
         )
         read_only_fields = ('created_at', 'updated_at')
 
@@ -137,7 +137,26 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Expiry date cannot be in the past.')
         return value
 
+    MAX_EVENT_DAYS = 366
+
+    def _validate_event(self, attrs):
+        inst = self.instance
+        start = attrs.get('event_start', getattr(inst, 'event_start', None))
+        end = attrs.get('event_end', getattr(inst, 'event_end', None))
+        if end and not start:
+            raise serializers.ValidationError({'event_start': 'Add a start date, or clear the end date.'})
+        if start and end and end < start:
+            raise serializers.ValidationError({'event_end': 'End date must be on or after the start date.'})
+        if start and end and (end - start).days > self.MAX_EVENT_DAYS:
+            raise serializers.ValidationError({'event_end': 'Events can last at most a year.'})
+        changed = inst is None or start != inst.event_start or end != inst.event_end
+        if start and changed and (end or start) < timezone.localdate():
+            raise serializers.ValidationError({'event_start': 'This date has already passed.'})
+        if end == start:
+            attrs['event_end'] = None  # store single-day events with no end date
+
     def validate(self, attrs):
+        self._validate_event(attrs)
         method = attrs.get('contact_method', getattr(self.instance, 'contact_method', Announcement.ContactMethod.NONE))
         info = (attrs.get('contact_info', getattr(self.instance, 'contact_info', '')) or '').strip()
         if method == Announcement.ContactMethod.NONE:

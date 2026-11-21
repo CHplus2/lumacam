@@ -42,6 +42,39 @@ export const fmtDate = (iso) =>
 // Date-only strings (YYYY-MM-DD) should not shift by timezone.
 export const fmtDay = (day) => (day ? fmtDate(`${day}T00:00:00`) : '')
 
+// ---- Local calendar dates (YYYY-MM-DD in the user's timezone, not UTC) ----
+const pad = (n) => String(n).padStart(2, '0')
+export const toISODate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+export const parseISODate = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d) }
+export const todayISO = () => toISODate(new Date())
+
+/** Date range for a quick filter, as { from, to } (inclusive), counted from today. */
+export function quickRange(key, now = new Date()) {
+  const days = { today: 0, week: 6, month: 29 }[key]
+  if (days === undefined) return null
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const end = new Date(start); end.setDate(start.getDate() + days)
+  return { from: toISODate(start), to: toISODate(end) }
+}
+
+/**
+ * Event date label in the reader's locale, e.g. "Sat, 28 Nov" or "25–28 Nov"
+ * ("Nov 25 – 28" in US English). The year is shown when it isn't this year.
+ */
+export function fmtEventRange(start, end) {
+  if (!start) return ''
+  const s = parseISODate(start)
+  const e = end ? parseISODate(end) : null
+  const thisYear = new Date().getFullYear()
+  const withYear = s.getFullYear() !== thisYear || (e && e.getFullYear() !== thisYear)
+  const base = { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}) }
+  if (!e) return s.toLocaleDateString(undefined, { ...base, weekday: 'short' })
+  const fmt = new Intl.DateTimeFormat(undefined, base)
+  return typeof fmt.formatRange === 'function'
+    ? fmt.formatRange(s, e)
+    : `${fmt.format(s)} – ${fmt.format(e)}`
+}
+
 const isHttp = (u) => /^https?:\/\//i.test(u || '')
 export const safeUrl = (u) => (isHttp(u) ? u : null)
 

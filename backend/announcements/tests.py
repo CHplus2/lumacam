@@ -308,3 +308,102 @@ class LiveFlowTests(LiveServerTestCase):
         self.assertEqual((status, edited['title']), (200, 'Hack night v2'))
         self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/")[0], 204)
         self.assertEqual(self.call('GET', '/api/announcements/')[1]['count'], 0)
+
+
+class EventDateTests(BaseCase):
+    def day(self, n):
+        return timezone.localdate() + timedelta(days=n)
+
+    def ids(self, query=''):
+        r = self.client.get(f'/api/announcements/{query}')
+        self.assertEqual(r.status_code, 200, r.data)
+        return [a['id'] for a in r.data['results']]
+
+    # ---- validation ----
+    def test_create_with_event_range(self):
+        r = self.client.post('/api/announcements/', self.payload(event_start=str(self.day(2)), event_end=str(self.day(4))))
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual((r.data['event_start'], r.data['event_end']), (str(self.day(2)), str(self.day(4))))
+
+    def test_same_day_end_is_dropped(self):
+        r = self.client.post('/api/announcements/', self.payload(event_start=str(self.day(2)), event_end=str(self.day(2))))
+        self.assertIsNone(r.data['event_end'])
+
+    def test_event_validation(self):
+        post = lambda **kw: self.client.post('/api/announcements/', self.payload(**kw))  # noqa: E731
+        self.assertIn('event_start', post(event_end=str(self.day(3))).data)
+        self.assertIn('event_end', post(event_start=str(self.day(3)), event_end=str(self.day(1))).data)
+        self.assertIn('event_start', post(event_start=str(self.day(-3)), event_end=str(self.day(-1))).data)
+        self.assertIn('event_end', post(event_start=str(self.day(1)), event_end=str(self.day(400))).data)
+        # Started already but still running: allowed.
+        self.assertEqual(post(event_start=str(self.day(-2)), event_end=str(self.day(2))).status_code, 201)
+
+    def test_editing_other_fields_of_past_event_is_allowed(self):
+        ann = self.make(event_start=self.day(-5), expires_at=self.day(3))
+        r = self.client.patch(f'/api/announcements/{ann.id}/', {'title': 'Recap and photos'})
+        self.assertEqual(r.status_code, 200, r.data)
+
+    def test_edit_can_clear_event_dates(self):
+        ann = self.make(event_start=self.day(1), event_end=self.day(3))
+        r = self.client.patch(f'/api/announcements/{ann.id}/', {'event_start': '', 'event_end': ''}, format='multipart')
+        self.assertEqual((r.status_code, r.data['event_start'], r.data['event_end']), (200, None, None))
+
+    # ---- auto-expiry ----
+    def test_hidden_after_event_ends_without_expiry(self):
+        ended = self.make(title='ended', event_start=self.day(-3), event_end=self.day(-1))
+        single_past = self.make(title='single past', event_start=self.day(-1))
+        today = self.make(title='today', event_start=self.day(0))
+        running = self.make(title='running', event_start=self.day(-2), event_end=self.day(0))
+        undated = self.make(title='undated')
+        visible = set(self.ids())
+        self.assertEqual(visible, {today.id, running.id, undated.id})
+        self.assertNotIn(ended.id, visible)
+        self.assertNotIn(single_past.id, visible)
+        counts = {c['slug']: c['announcement_count'] for c in self.client.get('/api/categories/').data}
+        self.assertEqual(counts['food-drinks'], 3)
+
+    def test_expiry_date_takes_precedence(self):
+        keep = self.make(event_start=self.day(-3), expires_at=self.day(2))
+        drop = self.make(event_start=self.day(5), expires_at=self.day(-1))
+        self.assertEqual(self.ids(), [keep.id])
+        self.assertNotIn(drop.id, self.ids())
+
+    # ---- date filter ----
+    def test_date_range_overlap(self):
+        a = self.make(title='A', event_start=self.day(1))
+        b = self.make(title='B', event_start=self.day(3), event_end=self.day(5))
+        self.make(title='C undated')
+        d = self.day
+        self.assertEqual(self.ids(f'?date_from={d(4)}&date_to={d(10)}'), [b.id])
+        self.assertEqual(self.ids(f'?date_from={d(1)}&date_to={d(1)}'), [a.id])
+        self.assertEqual(set(self.ids(f'?date_from={d(0)}&date_to={d(30)}')), {a.id, b.id})
+        self.assertEqual(self.ids(f'?date_from={d(6)}&date_to={d(9)}'), [])
+        self.assertEqual(self.ids(f'?date_from={d(2)}'), [b.id])
+        self.assertEqual(self.ids(f'?date_to={d(2)}'), [a.id])
+
+    def test_date_filter_combines_with_category_and_search(self):
+        hit = self.make(title='Pizza night', event_start=self.day(2))
+        self.make(title='Pizza sale', event_start=self.day(20))
+        self.make(title='Hack night', category=self.other_cat, event_start=self.day(2))
+        q = f'?category=food-drinks&search=pizza&date_from={self.day(0)}&date_to={self.day(6)}'
+        self.assertEqual(self.ids(q), [hit.id])
+
+    def test_bad_dates_are_rejected(self):
+        self.assertEqual(self.client.get('/api/announcements/?date_from=28-11-2026').status_code, 400)
+        r = self.client.get(f'/api/announcements/?date_from={self.day(5)}&date_to={self.day(1)}')
+        self.assertEqual(r.status_code, 400)
+
+    # ---- ordering ----
+    def test_upcoming_ordering_puts_undated_last(self):
+        later = self.make(title='later', event_start=self.day(9))
+        undated = self.make(title='undated')
+        sooner = self.make(title='sooner', event_start=self.day(1))
+        self.assertEqual(self.ids('?ordering=upcoming'), [sooner.id, later.id, undated.id])
+
+    def test_date_filter_defaults_to_upcoming_order(self):
+        later = self.make(title='later', event_start=self.day(5))
+        sooner = self.make(title='sooner', event_start=self.day(1))
+        Announcement.objects.filter(pk=sooner.pk).update(created_at=timezone.now() - timedelta(days=2))
+        q = f'?date_from={self.day(0)}&date_to={self.day(6)}'
+        self.assertEqual(self.ids(q), [sooner.id, later.id])
+        self.assertEqual(self.ids(q + '&ordering=newest'), [later.id, sooner.id])
