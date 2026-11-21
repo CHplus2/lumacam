@@ -314,18 +314,19 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   h1 { font-size: 1.45rem; }
   .hero { padding: 28px 20px; border-radius: 20px; }
   .hero h1 { font-size: 1.6rem; }
-  /* Phones: one row per category (icon, name, count) so names never break mid-word. */
-  .cat-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .cat-card { flex-direction: row; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; }
+  /* Phones: two cards per row, icon and name side by side. The name scales
+     with the screen so long words ("Announcements") fit beside the icon. */
+  .cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .cat-card { padding: 12px; border-radius: 16px; gap: 8px; }
   .cat-card:hover { transform: none; }
-  .cat-head { flex: 1; min-width: 0; margin-bottom: 0; gap: 12px; }
-  .cat-icon { width: 40px; height: 40px; border-radius: 12px; }
-  .cat-head .cat-icon svg { width: 22px; height: 22px; }
-  .cat-name { font-size: 1rem; }
-  .cat-count { margin-top: 0; white-space: nowrap; }
+  .cat-head { gap: 7px; margin-bottom: 0; }
+  .cat-icon { width: 32px; height: 32px; border-radius: 10px; }
+  .cat-head .cat-icon svg { width: 18px; height: 18px; }
+  .cat-name { font-size: clamp(0.75rem, 3.3vw, 0.95rem); line-height: 1.2; hyphens: auto; }
+  .cat-count { margin-top: 0; }
+  /* Categories page: bin in the bottom corner, beside the count, not over the name. */
   .cat-wrap .cat-head { padding-right: 0; }
-  .cat-wrap .cat-card { padding-right: 56px; }
-  .cat-delete { top: 50%; right: 12px; transform: translateY(-50%); width: 32px; height: 32px; }
+  .cat-delete { top: auto; bottom: 8px; right: 8px; width: 28px; height: 28px; }
   .cat-desc { display: none; }
   .ann-grid { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
