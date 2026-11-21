@@ -316,11 +316,11 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   .hero h1 { font-size: 1.6rem; }
   /* Phones: two cards per row, icon and name side by side. The name scales
      with the screen so long words ("Announcements") fit beside the icon. */
-  .cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .cat-card { padding: 12px; border-radius: 16px; gap: 8px; }
+  .cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .cat-card { padding: 12px 10px; border-radius: 16px; gap: 8px; }
   .cat-card:hover { transform: none; }
-  .cat-head { gap: 7px; margin-bottom: 0; }
-  .cat-icon { width: 32px; height: 32px; border-radius: 10px; }
+  .cat-head { gap: 6px; margin-bottom: 0; }
+  .cat-icon { width: 30px; height: 30px; border-radius: 9px; }
   .cat-head .cat-icon svg { width: 18px; height: 18px; }
   .cat-name { font-size: clamp(0.75rem, 3.3vw, 0.95rem); line-height: 1.2; hyphens: auto; }
   .cat-count { margin-top: 0; }
