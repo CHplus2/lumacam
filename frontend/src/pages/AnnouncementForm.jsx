@@ -200,7 +200,7 @@ export default function AnnouncementForm() {
           </select>
         </Field>
         {form.contact_method !== 'none' && (
-          <Field label="Contact details" htmlFor="contact_info" error={fields.contact_info}>
+          <Field label="Contact details" htmlFor="contact_info" error={fields.contact_info} hint={method.hint}>
             <input id="contact_info" value={form.contact_info} onChange={set('contact_info')} required placeholder={method.placeholder}
               inputMode={form.contact_method === 'whatsapp' ? 'tel' : undefined} />
           </Field>

@@ -30,10 +30,10 @@ export const CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', '
 export const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue' }
 
 export const CONTACT_METHODS = [
-  { value: 'none', label: 'No contact', placeholder: '' },
-  { value: 'whatsapp', label: 'WhatsApp', placeholder: 'Phone number with country code, e.g. 60123456789' },
-  { value: 'email', label: 'Email', placeholder: 'you@example.com' },
-  { value: 'link', label: 'External link', placeholder: 'https://forms.gle/...' },
+  { value: 'none', label: 'No contact', placeholder: '', hint: '' },
+  { value: 'whatsapp', label: 'WhatsApp', placeholder: 'e.g. 60123456789', hint: 'Phone number with country code' },
+  { value: 'email', label: 'Email', placeholder: 'you@example.com', hint: '' },
+  { value: 'link', label: 'External link', placeholder: 'https://...', hint: 'e.g. an Instagram page or Google Form' },
 ]
 
 export const fmtDate = (iso) =>
