@@ -48,10 +48,9 @@ export function CategoryCard({ category, preview = false }) {
   const Tag = preview ? 'div' : Link
   return (
     <Tag {...(preview ? {} : { to: `/category/${category.slug}` })} className={`cat-card tone-${category.color}`}>
-      <span className="cat-head">
-        <span className="cat-icon">{Icon && <Icon size={26} strokeWidth={2} />}</span>
-        <span className="cat-name">{category.name}</span>
-      </span>
+      {/* Symbol, name and count are separate rows sharing one left edge. */}
+      <span className="cat-symbol" aria-hidden="true">{Icon && <Icon size={30} strokeWidth={2} />}</span>
+      <span className="cat-name">{category.name}</span>
       <span className="cat-desc">{category.description}</span>
       {category.announcement_count !== undefined && (
         <span className="cat-count">{category.announcement_count} active</span>
