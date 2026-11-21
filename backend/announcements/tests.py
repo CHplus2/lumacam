@@ -255,7 +255,7 @@ class CategoryTests(BaseCase):
         self.client.delete(f'/api/categories/{self.other_cat.id}/')
         r = self.client.post('/api/announcements/', self.payload(category=self.other_cat.id))
         self.assertEqual(r.status_code, 400)
-        self.assertIn('category', r.data)
+        self.assertIn('no longer exists', r.data['category'][0])
 
     def test_recreating_deleted_category_restores_it(self):
         first = self.client.post('/api/categories/', self.new).data

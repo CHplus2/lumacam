@@ -72,7 +72,10 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class AnnouncementSerializer(serializers.ModelSerializer):
-    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.filter(is_removed=False))
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.filter(is_removed=False),
+        error_messages={'does_not_exist': 'This category no longer exists. Please choose another one.',
+                        'incorrect_type': 'Please choose a category.'})
     category_detail = CategorySerializer(source='category', read_only=True)
     image = serializers.ImageField(write_only=True, required=False, allow_null=True)
     remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
