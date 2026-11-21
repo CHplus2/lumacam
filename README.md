@@ -102,7 +102,7 @@ All endpoints are public and need no login or CSRF token.
 | `GET /categories/` | with live announcement counts |
 | `POST /categories/` | `name`, `description`, `icon`, `color`; live immediately, rate limited |
 | `DELETE /categories/:id/` | only when the category has no posts (else 400); moves it to the Trash |
-| `GET /announcements/?category=&search=&date_from=&date_to=&ordering=newest\|upcoming\|oldest\|expiring&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming` |
+| `GET /announcements/?category=&search=&date_from=&date_to=&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day |
 | `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; live immediately, rate limited |
 | `GET /announcements/:id/` | |
 | `PATCH /announcements/:id/` | multipart or JSON; `remove_image=true` drops the image; rate limited |
@@ -123,11 +123,13 @@ All endpoints are public and need no login or CSRF token.
 8. Click **Delete** on a post. It disappears and an **Undo** banner appears. Open the **Trash** (bin icon in the header) to see it with its erase date, and click **Restore**.
 9. Resize the browser below 720px. The top nav becomes a bottom bar with a prominent (+) Create button.
 
+10. Open a category and click **Follow** (or tick categories in the bell menu). Post something new in it; within a minute the bell shows a red count. Click **Mark all as seen** to clear it.
+
 ## Limitations
 
 - Anyone with the link can edit or delete any post. This is intentional for demos; production should add university login and per-user ownership, plus moderation.
 - Rate limits are the only spam control. On serverless hosting the counters are per instance and therefore weak.
-- Notifications are a placeholder (bell icon only).
+- Notifications are per browser: followed categories and the "last seen" time live in `localStorage`, and the bell checks for new posts every minute while the site is open. There are no push or email alerts.
 - Images are stored in the database. That is fine for a demo, but a large site should move them to object storage.
 - Seeded demo images are generated gradients. Real photographs come from uploads.
 - Search is case-insensitive substring matching (no ranking).

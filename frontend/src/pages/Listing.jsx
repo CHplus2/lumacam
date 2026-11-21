@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CalendarDays, Search, Trash2, X } from 'lucide-react'
+import { Bell, BellOff, CalendarDays, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import TrashNotice from '../components/TrashNotice'
+import { useFollows } from '../follows'
 import { ICONS, TRASH_DAYS, categoryDeleteBlocker, fmtEventRange, quickRange, todayISO } from '../utils'
 
 const SORTS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'upcoming', label: 'Upcoming first' },
   { value: 'oldest', label: 'Oldest first' },
-  { value: 'expiring', label: 'Expiring soon' },
+  { value: 'ending', label: 'Ending soon' },
 ]
 
 const WHEN = [
@@ -45,11 +46,14 @@ export default function Listing() {
   const dateActive = Boolean(dates.from || dates.to)
   // "What's on soonest" is the natural order once you filter by date.
   const defaultOrdering = dateActive ? 'upcoming' : 'newest'
-  const ordering = params.get('ordering') || defaultOrdering
+  const rawOrdering = params.get('ordering')
+  const ordering = (rawOrdering === 'expiring' ? 'ending' : rawOrdering) || defaultOrdering
   const { categories, reload: reloadCategories } = useCategories()
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const category = categories.find((c) => c.slug === slug)
+  const follows = useFollows()
+  const following = category ? follows.isFollowing(category.slug) : false
 
   const [items, setItems] = useState([])
   const [page, setPage] = useState(1)
@@ -152,10 +156,17 @@ export default function Listing() {
         onUndone={() => { load(1, true); reloadCategories() }} />
       <div className={`page-head ${category ? `tone-${category.color}` : ''}`}>
         {Icon && <span className="cat-icon"><Icon size={26} /></span>}
-        <div>
+        <div className="grow">
           <h1>{category ? category.name : 'Explore all announcements'}</h1>
           <p className="muted">{category ? category.description : 'Browse everything shared by your campus community.'}</p>
         </div>
+        {category && (
+          <button type="button" className={`btn btn-sm ${following ? '' : 'btn-primary'}`} aria-pressed={following}
+            onClick={() => follows.toggle(category.slug)}
+            title={following ? 'Stop notifications for this category' : 'Get notified about new posts here'}>
+            {following ? <><BellOff size={15} /> Following</> : <><Bell size={15} /> Follow</>}
+          </button>
+        )}
       </div>
 
       <div className="chips" role="tablist" aria-label="Categories">

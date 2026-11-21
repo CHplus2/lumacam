@@ -153,6 +153,8 @@ export default function AnnouncementForm() {
 
   const shownImage = preview || (removeImage ? null : existingImage)
   const today = todayISO()
+  const selectedCategory = categories.find((c) => String(c.id) === String(form.category))
+  const isEventCategory = selectedCategory?.slug === 'events'
 
   return (
     <form className="card form" onSubmit={submit} noValidate>
@@ -193,7 +195,11 @@ export default function AnnouncementForm() {
               disabled={!form.event_start} onChange={set('event_end')} />
           </Field>
         </div>
-        <small className="muted">For events, deadlines or preorders, so people can find it by date. Leave empty if it doesn&apos;t apply.</small>
+        {isEventCategory && !form.event_start ? (
+          <small className="date-nudge">Add a date so people can find this event by date, and it hides itself after it ends.</small>
+        ) : (
+          <small className="muted">For events, deadlines or preorders, so people can find it by date. Leave empty if it doesn&apos;t apply.</small>
+        )}
       </div>
 
       <Field label="Description" htmlFor="description" error={fields.description} hint={`${form.description.length}/3000`}>

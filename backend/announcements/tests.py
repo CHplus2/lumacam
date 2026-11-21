@@ -513,3 +513,33 @@ class TrashTests(BaseCase):
             self.client.delete(f'/api/announcements/{x.id}/')
         r = self.client.get('/api/trash/announcements/?search=pizza')
         self.assertEqual([x['id'] for x in r.data['results']], [a.id])
+
+
+class FeedbackFilterTests(BaseCase):
+    def ids(self, query):
+        r = self.client.get(f'/api/announcements/{query}')
+        self.assertEqual(r.status_code, 200, r.data)
+        return [a['id'] for a in r.data['results']]
+
+    def test_multiple_categories(self):
+        food = self.make(title='food')
+        ev = self.make(title='event', category=self.other_cat)
+        self.make(title='survey', category=Category.objects.get(slug='surveys'))
+        self.assertEqual(set(self.ids('?categories=food-drinks,events')), {food.id, ev.id})
+
+    def test_since(self):
+        old, new = self.make(title='old'), self.make(title='new')
+        Announcement.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=2))
+        since = (timezone.now() - timedelta(days=1)).isoformat()
+        self.assertEqual(self.ids(f"?since={since.replace('+', '%2B')}"), [new.id])
+        self.assertEqual(self.client.get('/api/announcements/?since=yesterday').status_code, 400)
+
+    def test_ending_soon_uses_expiry_or_event_end(self):
+        d = lambda n: timezone.localdate() + timedelta(days=n)  # noqa: E731
+        by_expiry = self.make(title='expiry in 5', expires_at=d(5))
+        by_event = self.make(title='event ends in 2', event_start=d(1), event_end=d(2))
+        single = self.make(title='single day in 3', event_start=d(3))
+        open_ended = self.make(title='no end')
+        expected = [by_event.id, single.id, by_expiry.id, open_ended.id]
+        self.assertEqual(self.ids('?ordering=ending'), expected)
+        self.assertEqual(self.ids('?ordering=expiring'), expected)  # old name still works

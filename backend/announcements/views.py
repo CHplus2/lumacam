@@ -4,6 +4,7 @@ from django.db.models import Count, F, Q
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -22,7 +23,8 @@ from .trash import safe_purge
 ORDERINGS = {
     'newest': '-created_at',
     'oldest': 'created_at',
-    'expiring': 'expires_at',
+    'expiring': 'ending',  # old name, kept for shared links
+    'ending': 'ending',
     'upcoming': 'event_start',
 }
 
@@ -139,13 +141,27 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
         qs = public_queryset()
         if p.get('category'):
             qs = qs.filter(category__slug=p['category'])
+        # Several categories at once (used by "followed categories" notifications).
+        if p.get('categories'):
+            qs = qs.filter(category__slug__in=[c for c in p['categories'].split(',') if c][:50])
+        if p.get('since'):
+            since = parse_datetime(p['since'])
+            if since is None:
+                raise ValidationError({'since': 'Use an ISO date-time, e.g. 2026-11-21T08:00:00Z.'})
+            if timezone.is_naive(since):
+                since = timezone.make_aware(since, timezone.utc)
+            qs = qs.filter(created_at__gt=since)
         qs = apply_search(qs, p.get('search'))
         date_from, date_to = parse_day(p, 'date_from'), parse_day(p, 'date_to')
         qs = apply_date_range(qs, date_from, date_to)
         # With a date filter, "what's on soonest" is the natural default order.
         default = 'upcoming' if (date_from or date_to) else 'newest'
         order = ORDERINGS.get(p.get('ordering') or default, '-created_at')
-        if order in ('expires_at', 'event_start'):
+        if order == 'ending':
+            # Soonest end first: "hide after" date, else the event's last day.
+            qs = qs.annotate(_ends=Coalesce('expires_at', 'event_end', 'event_start'))
+            return qs.order_by(F('_ends').asc(nulls_last=True), '-created_at', '-id')
+        if order == 'event_start':
             return qs.order_by(F(order).asc(nulls_last=True), '-created_at', '-id')
         return qs.order_by(order, '-id')
 

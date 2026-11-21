@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, FolderPlus, Search } from 'lucide-react'
+import { ArrowRight, CalendarDays, FolderPlus, Search } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { AnnouncementCard, CategoryCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
+import { quickRange } from '../utils'
 
 export default function Home() {
   const navigate = useNavigate()
@@ -12,12 +13,19 @@ export default function Home() {
   const [recent, setRecent] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [upcoming, setUpcoming] = useState([])
+  const [upcomingCount, setUpcomingCount] = useState(0)
 
   useEffect(() => {
     api.get('/announcements/', { params: { ordering: 'newest' } })
       .then(({ data }) => setRecent(data.results.slice(0, 6)))
       .catch((e) => setError(parseError(e).message))
       .finally(() => setLoading(false))
+    // Dated posts in the next 7 days; the section only shows when there are some.
+    const week = quickRange('week')
+    api.get('/announcements/', { params: { date_from: week.from, date_to: week.to } })
+      .then(({ data }) => { setUpcoming(data.results.slice(0, 3)); setUpcomingCount(data.count) })
+      .catch(() => {})
   }, [])
 
   const submit = (e) => {
@@ -52,6 +60,18 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      {upcoming.length > 0 && (
+        <section>
+          <div className="section-head">
+            <h2><CalendarDays size={20} className="inline" /> Coming up this week</h2>
+            <Link to="/explore?when=week" className="link-more">
+              {upcomingCount > upcoming.length ? `All ${upcomingCount}` : 'View all'} <ArrowRight size={16} />
+            </Link>
+          </div>
+          <div className="ann-grid">{upcoming.map((a) => <AnnouncementCard key={a.id} a={a} />)}</div>
+        </section>
+      )}
 
       <section>
         <div className="section-head">
