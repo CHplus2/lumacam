@@ -12,7 +12,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
     @admin.action(description='Restore selected categories')
     def restore(self, request, queryset):
-        queryset.update(is_removed=False)
+        queryset.update(is_removed=False, removed_at=None)
 
 
 @admin.register(Announcement)
@@ -24,4 +24,4 @@ class AnnouncementAdmin(admin.ModelAdmin):
 
     @admin.action(description='Restore selected posts (make them live again)')
     def restore(self, request, queryset):
-        queryset.update(status=Announcement.Status.APPROVED)
+        queryset.update(status=Announcement.Status.APPROVED, removed_at=None)

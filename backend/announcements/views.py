@@ -7,11 +7,17 @@ from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 
+from django.db.models import Max
+from django.shortcuts import get_object_or_404
+
 from .models import Announcement, Category
-from .serializers import AnnouncementSerializer, CategorySerializer
+from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
+                          TrashedCategorySerializer)
+from .trash import safe_purge
 
 ORDERINGS = {
     'newest': '-created_at',
@@ -112,7 +118,8 @@ class CategoryDetailView(generics.RetrieveDestroyAPIView):
                  'announcement_count': posts},
                 status=status.HTTP_400_BAD_REQUEST)
         cat.is_removed = True
-        cat.save(update_fields=['is_removed'])
+        cat.removed_at = timezone.now()
+        cat.save(update_fields=['is_removed', 'removed_at'])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -167,7 +174,66 @@ class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         instance.status = Announcement.Status.REMOVED
-        instance.save(update_fields=['status', 'updated_at'])
+        instance.removed_at = timezone.now()
+        instance.save(update_fields=['status', 'removed_at', 'updated_at'])
+
+
+# ---------------- Trash ----------------
+
+class TrashAnnouncementListView(generics.ListAPIView):
+    serializer_class = TrashedAnnouncementSerializer
+    permission_classes = [AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        safe_purge()  # never show items past their 30 days
+        return super().list(request, *args, **kwargs)
+
+    def get_queryset(self):
+        qs = (Announcement.objects.select_related('category')
+              .filter(status=Announcement.Status.REMOVED).order_by('-removed_at', '-id'))
+        return apply_search(qs, self.request.query_params.get('search'))
+
+
+class TrashCategoryListView(generics.ListAPIView):
+    serializer_class = TrashedCategorySerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+    def list(self, request, *args, **kwargs):
+        safe_purge()
+        return super().list(request, *args, **kwargs)
+
+    def get_queryset(self):
+        trashed = Q(announcements__status=Announcement.Status.REMOVED)
+        return (Category.objects.filter(is_removed=True)
+                .annotate(trashed_posts=Count('announcements', filter=trashed),
+                          latest_post_removed_at=Max('announcements__removed_at', filter=trashed))
+                .order_by('-removed_at', 'name'))
+
+
+class TrashRestoreView(APIView):
+    """Restore a post or category from the Trash."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'modify'
+    kind = None  # 'announcement' or 'category'
+
+    def post(self, request, pk):
+        if self.kind == 'category':
+            cat = get_object_or_404(Category, pk=pk, is_removed=True)
+            cat.is_removed, cat.removed_at = False, None
+            cat.save(update_fields=['is_removed', 'removed_at'])
+            return Response({'restored': 'category', 'id': cat.id, 'slug': cat.slug, 'name': cat.name})
+        ann = get_object_or_404(Announcement.objects.select_related('category'),
+                                pk=pk, status=Announcement.Status.REMOVED)
+        restored_category = None
+        if ann.category.is_removed:  # a post can't live in a trashed category
+            ann.category.is_removed, ann.category.removed_at = False, None
+            ann.category.save(update_fields=['is_removed', 'removed_at'])
+            restored_category = ann.category.name
+        ann.status, ann.removed_at = Announcement.Status.APPROVED, None
+        ann.save(update_fields=['status', 'removed_at', 'updated_at'])
+        return Response({'restored': 'announcement', 'id': ann.id, 'title': ann.title,
+                         'restored_category': restored_category})
 
 
 def serve_media(request, path):

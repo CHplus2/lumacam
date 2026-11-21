@@ -165,6 +165,9 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 # Vercel rejects request bodies over 4.5MB; the frontend also downsizes images.
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
+# Deleted posts and categories stay in the Trash this many days before being erased.
+TRASH_DAYS = int(os.environ.get('TRASH_DAYS', '30'))
+
 STORAGES = {
     'default': {'BACKEND': 'announcements.storage.DatabaseStorage'},
     'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},

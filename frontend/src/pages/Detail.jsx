@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Calendar, ExternalLink, Mail, MessageCircle, Pencil, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Spinner } from '../components/ui'
-import { contactLink, fmtDate, fmtDay, safeUrl } from '../utils'
+import { contactLink, fmtDate, fmtDay, safeUrl, TRASH_DAYS } from '../utils'
 
 export default function Detail() {
   const { id } = useParams()
@@ -33,11 +33,11 @@ export default function Detail() {
   const ContactIcon = a.contact_method === 'email' ? Mail : a.contact_method === 'whatsapp' ? MessageCircle : ExternalLink
 
   const remove = async () => {
-    if (!window.confirm(`Delete "${a.title}"? It will disappear for everyone.`)) return
+    if (!window.confirm(`Move "${a.title}" to the Trash? It disappears for everyone, and you can restore it from the Trash for ${TRASH_DAYS} days.`)) return
     setDeleting(true); setActionError('')
     try {
       await api.delete(`/announcements/${a.id}/`)
-      navigate('/explore', { replace: true })
+      navigate('/explore', { replace: true, state: { trashed: { kind: 'announcement', id: a.id, label: a.title } } })
     } catch (e) {
       setActionError(parseError(e).message)
       setDeleting(false)

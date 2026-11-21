@@ -36,6 +36,29 @@ export const CONTACT_METHODS = [
   { value: 'link', label: 'External link', placeholder: 'https://...', hint: 'e.g. an Instagram page or Google Form' },
 ]
 
+// Keep in sync with TRASH_DAYS in backend settings.
+export const TRASH_DAYS = 30
+
+const DAY = 24 * 60 * 60 * 1000
+
+/** "today", "yesterday", "3 days ago". */
+export function fmtRelative(iso) {
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((startOf(new Date()) - startOf(new Date(iso))) / DAY)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  return `${days} days ago`
+}
+
+/** "in 28 days", "tomorrow", "within a day". */
+export function timeLeft(iso) {
+  if (!iso) return ''
+  const days = Math.floor((new Date(iso).getTime() - Date.now()) / DAY)
+  if (days < 1) return 'within a day'
+  if (days === 1) return 'tomorrow'
+  return `in ${days} days`
+}
+
 export const fmtDate = (iso) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Aperture, Bell, Compass, House, LayoutGrid, Plus } from 'lucide-react'
+import { Aperture, Bell, Compass, House, LayoutGrid, Plus, Trash2 } from 'lucide-react'
 
 function Logo() {
   return (
@@ -52,6 +52,9 @@ export default function Layout() {
             <NavLink to="/explore" className={link}>Explore</NavLink>
           </nav>
           <div className="header-actions">
+            <NavLink to="/trash" className={({ isActive }) => `icon-btn${isActive ? ' active' : ''}`} aria-label="Trash" title="Trash">
+              <Trash2 size={20} />
+            </NavLink>
             <Notifications />
             <Link to="/create" className="btn btn-primary btn-sm header-create"><Plus size={16} /> Create Announcement</Link>
           </div>

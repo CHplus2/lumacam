@@ -13,9 +13,10 @@ class Category(models.Model):
     # Kept for a future moderation step; new categories are live immediately.
     is_approved = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
-    # "Delete" in the app hides a category instead of erasing it, so it can be
-    # restored in /django-admin/. Only categories without posts can be deleted.
+    # "Delete" in the app moves a category to the Trash (only once it has no
+    # live posts). It is erased for good TRASH_DAYS after removed_at.
     is_removed = models.BooleanField(default=False, db_index=True)
+    removed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['sort_order', 'name']
@@ -36,9 +37,9 @@ class Announcement(models.Model):
         PENDING = 'pending', 'Pending'
         APPROVED = 'approved', 'Live'
         REJECTED = 'rejected', 'Rejected'
-        # "Delete" in the app hides a post instead of erasing it, so posts
-        # removed by mistake (or by a prankster) can be restored in /django-admin/.
-        REMOVED = 'removed', 'Removed'
+        # "Delete" in the app moves a post to the Trash; it is erased for good
+        # TRASH_DAYS after removed_at, and can be restored until then.
+        REMOVED = 'removed', 'In trash'
 
     class ContactMethod(models.TextChoices):
         WHATSAPP = 'whatsapp', 'WhatsApp'
@@ -66,6 +67,7 @@ class Announcement(models.Model):
     # Without an expiry date, the post is hidden the day after the event ends.
     event_start = models.DateField(null=True, blank=True, db_index=True)
     event_end = models.DateField(null=True, blank=True)
+    removed_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ['-created_at']

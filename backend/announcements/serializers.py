@@ -62,6 +62,7 @@ class CategorySerializer(serializers.ModelSerializer):
             for key, val in validated_data.items():
                 setattr(removed, key, val)
             removed.is_removed = False
+            removed.removed_at = None
             removed.save()
             return removed
         base = slugify(validated_data['name'])[:50] or 'category'
@@ -198,3 +199,39 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         if old_image and old_image != (instance.image.name or None):
             instance.image.storage.delete(old_image)
         return instance
+
+
+def _iso(dt):
+    # Same format as DRF's DateTimeField, so removed_at and purge_at match.
+    return serializers.DateTimeField().to_representation(dt) if dt else None
+
+
+class TrashedAnnouncementSerializer(AnnouncementSerializer):
+    purge_at = serializers.SerializerMethodField()
+    category_in_trash = serializers.BooleanField(source='category.is_removed', read_only=True)
+
+    class Meta(AnnouncementSerializer.Meta):
+        fields = AnnouncementSerializer.Meta.fields + ('removed_at', 'purge_at', 'category_in_trash')
+        read_only_fields = fields
+
+    def get_purge_at(self, obj):
+        from .trash import purge_at
+        return _iso(purge_at(obj.removed_at))
+
+
+class TrashedCategorySerializer(CategorySerializer):
+    purge_at = serializers.SerializerMethodField()
+    trashed_posts = serializers.IntegerField(read_only=True)
+
+    class Meta(CategorySerializer.Meta):
+        fields = CategorySerializer.Meta.fields + ('removed_at', 'purge_at', 'trashed_posts')
+        read_only_fields = fields
+
+    def get_purge_at(self, obj):
+        from datetime import timedelta
+
+        from .trash import trash_days
+        # A category waits for its newest trashed post before it can be erased.
+        latest = max(filter(None, [obj.removed_at, getattr(obj, 'latest_post_removed_at', None)]), default=None)
+        return _iso(latest + timedelta(days=trash_days()) if latest else None)
+

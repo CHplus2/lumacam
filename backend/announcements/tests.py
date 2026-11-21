@@ -407,3 +407,109 @@ class EventDateTests(BaseCase):
         q = f'?date_from={self.day(0)}&date_to={self.day(6)}'
         self.assertEqual(self.ids(q), [sooner.id, later.id])
         self.assertEqual(self.ids(q + '&ordering=newest'), [later.id, sooner.id])
+
+
+class TrashTests(BaseCase):
+    def trash_posts(self):
+        return [a['id'] for a in self.client.get('/api/trash/announcements/').data['results']]
+
+    def trash_cats(self):
+        return [c['id'] for c in self.client.get('/api/trash/categories/').data]
+
+    def age(self, obj, days):
+        type(obj).objects.filter(pk=obj.pk).update(removed_at=timezone.now() - timedelta(days=days))
+
+    def test_deleted_post_goes_to_trash_with_purge_date(self):
+        ann = self.make()
+        self.client.delete(f'/api/announcements/{ann.id}/')
+        r = self.client.get('/api/trash/announcements/')
+        self.assertEqual([a['id'] for a in r.data['results']], [ann.id])
+        item = r.data['results'][0]
+        self.assertTrue(item['removed_at'] and item['purge_at'])
+        self.assertGreater(item['purge_at'], item['removed_at'])
+        self.assertEqual(self.public_titles(), [])
+
+    def test_restore_post(self):
+        ann = self.make()
+        self.client.delete(f'/api/announcements/{ann.id}/')
+        r = self.client.post(f'/api/trash/announcements/{ann.id}/restore/')
+        self.assertEqual((r.status_code, r.data['restored_category']), (200, None))
+        self.assertEqual(self.public_titles(), ['Nasi lemak'])
+        self.assertEqual(self.trash_posts(), [])
+        ann.refresh_from_db()
+        self.assertIsNone(ann.removed_at)
+        self.assertEqual(self.client.post(f'/api/trash/announcements/{ann.id}/restore/').status_code, 404)
+
+    def test_restoring_post_also_restores_its_trashed_category(self):
+        cat_id = self.client.post('/api/categories/', {'name': 'Clubs', 'icon': 'music', 'color': 'blue'}).data['id']
+        ann_id = self.client.post('/api/announcements/', self.payload(category=cat_id)).data['id']
+        self.client.delete(f'/api/announcements/{ann_id}/')
+        self.assertEqual(self.client.delete(f'/api/categories/{cat_id}/').status_code, 204)
+        trashed = self.client.get('/api/trash/categories/').data
+        self.assertEqual([(c['id'], c['trashed_posts']) for c in trashed], [(cat_id, 1)])
+        r = self.client.post(f'/api/trash/announcements/{ann_id}/restore/')
+        self.assertEqual(r.data['restored_category'], 'Clubs')
+        self.assertIn('clubs', [c['slug'] for c in self.client.get('/api/categories/').data])
+        self.assertEqual(self.public_titles('/api/announcements/?category=clubs'), ['Fresh cookies'])
+
+    def test_restore_category(self):
+        self.client.delete(f'/api/categories/{self.other_cat.id}/')
+        self.assertEqual(self.trash_cats(), [self.other_cat.id])
+        r = self.client.post(f'/api/trash/categories/{self.other_cat.id}/restore/')
+        self.assertEqual((r.status_code, r.data['slug']), (200, 'events'))
+        self.assertEqual(self.trash_cats(), [])
+        self.assertIn('events', [c['slug'] for c in self.client.get('/api/categories/').data])
+
+    def test_old_items_are_purged(self):
+        old, recent = self.make(title='old'), self.make(title='recent')
+        for a in (old, recent):
+            self.client.delete(f'/api/announcements/{a.id}/')
+        self.age(old, 31)
+        self.age(recent, 29)
+        self.assertEqual(self.trash_posts(), [recent.id])  # listing runs the purge
+        self.assertFalse(Announcement.objects.filter(pk=old.id).exists())
+
+    def test_purge_removes_image(self):
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        self.client.delete(f"/api/announcements/{r.data['id']}/")
+        self.age(Announcement.objects.get(pk=r.data['id']), 31)
+        self.trash_posts()
+        self.assertEqual(StoredFile.objects.count(), 0)
+
+    def test_category_waits_for_its_trashed_posts(self):
+        cat = Category.objects.create(name='Temp', slug='temp', icon='tag')
+        ann = self.make(category=cat)
+        self.client.delete(f'/api/announcements/{ann.id}/')
+        self.client.delete(f'/api/categories/{cat.id}/')
+        self.age(cat, 40)
+        self.age(ann, 10)
+        self.assertEqual(self.trash_cats(), [cat.id])  # its post still has 20 days left
+        item = self.client.get('/api/trash/categories/').data[0]
+        self.assertGreater(item['purge_at'], (timezone.now() + timedelta(days=19)).isoformat())
+        self.age(ann, 31)
+        self.assertEqual(self.trash_cats(), [])
+        self.assertFalse(Category.objects.filter(pk=cat.id).exists())
+
+    def test_purge_command(self):
+        from io import StringIO
+        from django.core.management import call_command
+        ann = self.make()
+        self.client.delete(f'/api/announcements/{ann.id}/')
+        self.age(ann, 31)
+        out = StringIO()
+        call_command('purge_trash', stdout=out)
+        self.assertIn('Erased 1 post(s)', out.getvalue())
+
+    def test_recreating_trashed_category_takes_it_out_of_trash(self):
+        cat_id = self.client.post('/api/categories/', {'name': 'Clubs', 'icon': 'music', 'color': 'blue'}).data['id']
+        self.client.delete(f'/api/categories/{cat_id}/')
+        self.client.post('/api/categories/', {'name': 'Clubs', 'icon': 'music', 'color': 'blue'})
+        self.assertEqual(self.trash_cats(), [])
+        self.assertIsNone(Category.objects.get(pk=cat_id).removed_at)
+
+    def test_trash_search(self):
+        a, b = self.make(title='Pizza night'), self.make(title='Book sale')
+        for x in (a, b):
+            self.client.delete(f'/api/announcements/{x.id}/')
+        r = self.client.get('/api/trash/announcements/?search=pizza')
+        self.assertEqual([x['id'] for x in r.data['results']], [a.id])

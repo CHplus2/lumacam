@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
-import { ICONS, categoryDeleteBlocker, fmtEventRange, quickRange, todayISO } from '../utils'
+import TrashNotice from '../components/TrashNotice'
+import { ICONS, TRASH_DAYS, categoryDeleteBlocker, fmtEventRange, quickRange, todayISO } from '../utils'
 
 const SORTS = [
   { value: 'newest', label: 'Newest first' },
@@ -34,6 +35,9 @@ export default function Listing() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
+  const location = useLocation()
+  const trashed = location.state?.trashed
+  const closeNotice = () => navigate(location.pathname + location.search, { replace: true, state: null })
   const initialQ = params.get('q') || ''
   const [q, setQ] = useState(initialQ)
   const debouncedQ = useDebounced(q)
@@ -129,12 +133,12 @@ export default function Listing() {
   const deleteCategory = async () => {
     const blocker = categoryDeleteBlocker(category)
     if (blocker) { setDeleteError(blocker); return }
-    if (!window.confirm(`Delete the category "${category.name}"?`)) return
+    if (!window.confirm(`Move the category "${category.name}" to the Trash? You can restore it for ${TRASH_DAYS} days.`)) return
     setDeleting(true); setDeleteError('')
     try {
       await api.delete(`/categories/${category.id}/`)
       reloadCategories()
-      navigate('/categories', { replace: true })
+      navigate('/categories', { replace: true, state: { trashed: { kind: 'category', id: category.id, label: category.name } } })
     } catch (e) {
       setDeleteError(parseError(e).message)
     } finally { setDeleting(false) }
@@ -144,6 +148,8 @@ export default function Listing() {
 
   return (
     <>
+      <TrashNotice key={trashed?.id} item={trashed} onClose={closeNotice}
+        onUndone={() => { load(1, true); reloadCategories() }} />
       <div className={`page-head ${category ? `tone-${category.color}` : ''}`}>
         {Icon && <span className="cat-icon"><Icon size={26} /></span>}
         <div>

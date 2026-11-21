@@ -20,3 +20,6 @@ def run():
         call_command('migrate', interactive=False, verbosity=0)
     except Exception:  # e.g. another instance migrating at the same moment
         logger.exception('Automatic migration failed; continuing to serve requests.')
+        return
+    from announcements.trash import safe_purge
+    safe_purge()  # erase Trash items past their 30 days
