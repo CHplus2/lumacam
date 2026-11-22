@@ -171,18 +171,20 @@ label { font-weight: 600; font-size: 0.9rem; }
 
 /* Category cards */
 .cat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.cat-card { display: flex; flex-direction: column; gap: 6px; padding: 22px; border-radius: 20px; background: var(--tone-bg); color: var(--text); border: 1px solid transparent; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+/* Symbol and name share the top row; description and count span the card below. */
+.cat-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 6px; align-content: start; padding: 22px; border-radius: 20px; background: var(--tone-bg); color: var(--text); border: 1px solid transparent; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
 .cat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--tone-fg); text-decoration: none; }
 .cat-icon { width: 48px; height: 48px; border-radius: 14px; background: #fff; color: var(--tone-fg); display: grid; place-items: center; box-shadow: var(--shadow); flex: none; margin-bottom: 6px; }
-.cat-symbol { display: block; line-height: 0; color: var(--tone-fg); margin-bottom: 6px; }
+.cat-symbol { display: block; line-height: 0; color: var(--tone-fg); }
 /* Lucide draws its glyphs with ~2px of empty space inside the 24px grid
    (5px for "+"); pull them left so the visible symbol starts on the text's edge. */
 .cat-symbol svg { margin-left: -2.5px; }
 .cat-symbol-plus svg { margin-left: -6.25px; }
 .cat-name { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; overflow-wrap: break-word; }
 /* Leave room for the bin button in the corner on the Categories page. */
-.cat-desc { color: #4b5563; font-size: 0.875rem; }
-.cat-count { margin-top: 6px; font-size: 0.8rem; font-weight: 600; color: var(--tone-fg); }
+.cat-wrap .cat-name { padding-right: 36px; }
+.cat-desc { grid-column: 1 / -1; color: #4b5563; font-size: 0.875rem; }
+.cat-count { grid-column: 1 / -1; margin-top: 6px; font-size: 0.8rem; font-weight: 600; color: var(--tone-fg); }
 
 /* Announcement cards */
 .ann-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -335,9 +337,12 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   h1 { font-size: 1.45rem; }
   .hero { padding: 28px 20px; border-radius: 20px; }
   .hero h1 { font-size: 1.6rem; }
-  /* Phones: two cards per row; symbol, name and count stacked on one left edge. */
+  /* Phones: two cards per row, too narrow for symbol + name side by side
+     ("Marketplace" breaks mid-word at 360px), so they stack on one left edge. */
   .cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .cat-card { padding: 14px; border-radius: 16px; gap: 4px; }
+  .cat-card { display: flex; flex-direction: column; align-items: stretch; padding: 14px; border-radius: 16px; gap: 4px; }
+  .cat-symbol { margin-bottom: 6px; }
+  .cat-wrap .cat-name { padding-right: 0; }
   .cat-card:hover { transform: none; }
   .cat-symbol svg { width: 26px; height: 26px; margin-left: -2.2px; }
   .cat-symbol-plus svg { margin-left: -5.4px; }

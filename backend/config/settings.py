@@ -126,7 +126,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+# Malaysia (UTC+8): "today" for expiry, event dates and date filters follows campus time.
+TIME_ZONE = "Asia/Kuching"
 
 USE_I18N = True
 
