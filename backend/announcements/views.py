@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timezone as dt_timezone
 
 from django.db.models import Count, F, Q
 from django.db.models.functions import Coalesce
@@ -151,7 +151,7 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
             if since is None:
                 raise ValidationError({'since': 'Use an ISO date-time, e.g. 2026-11-21T08:00:00Z.'})
             if timezone.is_naive(since):
-                since = timezone.make_aware(since, timezone.utc)
+                since = timezone.make_aware(since, dt_timezone.utc)
             qs = qs.filter(created_at__gt=since)
         if p.get('pickup'):
             qs = qs.filter(pickup_locations__name__iexact=p['pickup'].strip())  # names are unique

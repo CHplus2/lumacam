@@ -642,3 +642,19 @@ class SellingTests(BaseCase):
         self.assertTrue(cat['sells_items'])
         a = self.post(category=cat['id'], pickup_locations=['Hostel B'])
         self.assertEqual((a['availability'], a['pickup_locations']), ('available', ['Hostel B']))
+
+
+class CampusTimeZoneTests(BaseCase):
+    def test_ended_event_hidden_after_midnight_malaysia_time(self):
+        # 01:00 on 23 Nov in Malaysia is still 22 Nov in UTC. An event that ended on
+        # 22 Nov must already be gone, not linger until 08:00.
+        from datetime import date, datetime, timezone as dt_timezone
+        from unittest import mock
+        self.make(title='Sunday bazaar', event_start=date(2026, 11, 22))
+        now = datetime(2026, 11, 22, 17, 0, tzinfo=dt_timezone.utc)
+        with mock.patch('django.utils.timezone.now', return_value=now):
+            self.assertEqual(self.public_titles(), [])
+
+    def test_since_without_timezone_is_accepted(self):
+        r = self.client.get('/api/announcements/?since=2026-11-21T08:00:00')
+        self.assertEqual(r.status_code, 200)
