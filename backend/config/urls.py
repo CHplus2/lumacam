@@ -15,6 +15,7 @@ urlpatterns = [
     path('', api_root),
     path('api/', api_root),
     path('django-admin/', admin.site.urls),
+    path('api/', include('accounts.urls')),
     path('api/', include('announcements.urls')),
     re_path(r'^media/(?P<path>.+)$', serve_media),
 ]

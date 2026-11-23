@@ -25,12 +25,19 @@ CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
 
 class CategorySerializer(serializers.ModelSerializer):
     announcement_count = serializers.IntegerField(read_only=True, required=False)
+    can_delete = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
-        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'sells_items', 'announcement_count')
+        fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'sells_items', 'announcement_count',
+                  'can_delete')
         read_only_fields = ('slug',)
         extra_kwargs = {'name': {'validators': []}}  # uniqueness checked case-insensitively below
+
+    def get_can_delete(self, obj):
+        from .ownership import owns
+        request = self.context.get('request')
+        return owns(getattr(request, 'user', None), obj, 'created_by_id')
 
     def validate_name(self, value):
         value = ' '.join(value.split())
@@ -136,13 +143,13 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'expires_at', 'event_start', 'event_end',
             'availability', 'stock_updated_at', 'pickup_locations', 'can_edit',
         )
-        read_only_fields = ('created_at', 'updated_at', 'stock_updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'stock_updated_at', 'publisher_name')
 
     def get_can_edit(self, obj):
-        """True when the request carries this post's edit key (never reveals the key)."""
-        from .ownership import is_owner, token_from
+        """True when the logged-in account posted this."""
+        from .ownership import owns
         request = self.context.get('request')
-        return bool(request) and is_owner(obj, token_from(request))
+        return owns(getattr(request, 'user', None), obj)
 
     def get_image_url(self, obj):
         return obj.image.url if obj.image else None

@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import { CalendarDays, ExternalLink, Inbox, LoaderCircle, Mail, MapPin, MessageCircle } from 'lucide-react'
 import { StockBadge } from './selling'
-import { useMyPosts } from '../ownership'
 import { ICONS, contactLink, fmtDate, fmtEventRange, parseISODate } from '../utils'
 
 export function Spinner({ label = 'Loading...' }) {
@@ -96,7 +95,6 @@ function QuickContact({ a }) {
 
 export function AnnouncementCard({ a, to, footer }) {
   const Icon = ICONS[a.category_detail?.icon]
-  const { isMine } = useMyPosts()
   return (
     <article className={`card ann-card ${a.availability === 'out' ? 'is-out' : ''}`}>
       <Link to={to || `/announcements/${a.id}`} className="ann-link">
@@ -120,7 +118,7 @@ export function AnnouncementCard({ a, to, footer }) {
               <span>{a.pickup_locations[0]}{a.pickup_locations.length > 1 && ` +${a.pickup_locations.length - 1} more`}</span>
             </p>
           )}
-          <p className="ann-meta">Posted by {a.publisher_name} · {fmtDate(a.created_at)}{isMine(a.id) && <span className="mine-chip">Yours</span>}</p>
+          <p className="ann-meta">Posted by {a.publisher_name} · {fmtDate(a.created_at)}{a.can_edit && <span className="mine-chip">Yours</span>}</p>
         </div>
       </Link>
       {footer === undefined ? <QuickContact a={a} /> : footer}

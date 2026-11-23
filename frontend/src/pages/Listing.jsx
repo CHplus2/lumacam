@@ -32,7 +32,7 @@ function readDateFilter(params) {
   return range ? { when, ...range } : { when: '', from: '', to: '' }
 }
 
-export default function Listing() {
+export default function Listing({ mine = false }) {
   const { slug } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -95,7 +95,7 @@ export default function Listing() {
     try {
       const { data } = await api.get('/announcements/', {
         params: {
-          category: slug || undefined, search: urlQ || undefined, ordering, page: pageNo,
+          category: slug || undefined, search: urlQ || undefined, ordering, page: pageNo, mine: mine ? 1 : undefined,
           date_from: dates.from || undefined, date_to: dates.to || undefined,
           stock: stockIn ? 'in' : undefined, pickup: pickup || undefined,
         },
@@ -109,7 +109,7 @@ export default function Listing() {
     } finally {
       if (myId === requestId.current) setLoading(false)
     }
-  }, [slug, urlQ, ordering, dates.from, dates.to, stockIn, pickup])
+  }, [slug, urlQ, ordering, dates.from, dates.to, stockIn, pickup, mine])
 
   useEffect(() => { load(1, true) }, [load])
 
@@ -184,8 +184,12 @@ export default function Listing() {
       <div className={`page-head ${category ? `tone-${category.color}` : ''}`}>
         {Icon && <span className="cat-icon"><Icon size={26} /></span>}
         <div className="grow">
-          <h1>{category ? category.name : 'Explore all announcements'}</h1>
-          <p className="muted">{category ? category.description : 'Browse everything shared by your campus community.'}</p>
+          <h1>{category ? category.name : mine ? 'My posts' : 'Explore all announcements'}</h1>
+          <p className="muted">
+            {category ? category.description : mine
+              ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash">Trash</Link>.</>
+              : 'Browse everything shared by your campus community.'}
+          </p>
         </div>
         {category && (
           <button type="button" className={`btn btn-sm ${following ? '' : 'btn-primary'}`} aria-pressed={following}
@@ -196,12 +200,12 @@ export default function Listing() {
         )}
       </div>
 
-      <div className="chips" role="tablist" aria-label="Categories">
+      {!mine && <div className="chips" role="tablist" aria-label="Categories">
         <Link to={`/explore${keepDates}`} className={`chip ${!slug ? 'active' : ''}`}>All</Link>
         {categories.map((c) => (
           <Link key={c.id} to={`/category/${c.slug}${keepDates}`} className={`chip ${slug === c.slug ? 'active' : ''}`}>{c.name}</Link>
         ))}
-      </div>
+      </div>}
 
       <div className="toolbar">
         <div className="search-bar">
@@ -275,7 +279,7 @@ export default function Listing() {
       <ErrorBox message={error} onRetry={() => load(1, true)} />
       {loading && items.length === 0 ? <Spinner /> : !error && items.length === 0 ? (
         <EmptyState
-          title={urlQ ? `No results for "${urlQ}"` : dateActive ? 'Nothing scheduled for these dates'
+          title={urlQ ? `No results for "${urlQ}"` : mine && !dateActive ? 'You haven\'t posted anything yet' : dateActive ? 'Nothing scheduled for these dates'
             : sellFiltersActive ? 'Nothing matches these filters' : 'No announcements here yet'}
           text={urlQ ? 'Try a different keyword or browse all categories.'
             : dateActive ? 'Try another date range, or clear the date filter to see everything.'
@@ -306,7 +310,7 @@ export default function Listing() {
         </>
       )}
 
-      {category && (
+      {category?.can_delete && (
         <div className="page-foot">
           <ErrorBox message={deleteError} />
           <button className="btn btn-quiet-danger btn-sm" onClick={deleteCategory} disabled={deleting}>

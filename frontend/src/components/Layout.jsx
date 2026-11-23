@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Aperture, Bell, BellRing, Compass, House, LayoutGrid, Plus, Settings, Trash2 } from 'lucide-react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import {
+  Aperture, Bell, BellRing, Compass, FileText, House, LayoutGrid, LogIn, LogOut, Plus, Settings, Trash2,
+} from 'lucide-react'
 import api from '../api'
 import { useFollows } from '../follows'
 import { updatePush } from '../push'
+import { clearAuth, useAuth } from '../auth'
 import { fmtDate } from '../utils'
 
 function Logo() {
@@ -97,6 +100,57 @@ function Notifications() {
   )
 }
 
+function useOutsideClose(ref, setOpen) {
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [ref, setOpen])
+}
+
+/** Log in button, or the account menu once logged in. */
+function AccountMenu() {
+  const { user, loggedIn } = useAuth()
+  const { pathname, search } = useLocation()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useOutsideClose(ref, setOpen)
+
+  if (!loggedIn) {
+    const next = pathname === '/login' || pathname === '/register' ? '' : `?next=${encodeURIComponent(pathname + search)}`
+    return <Link to={`/login${next}`} className="btn btn-sm header-login"><LogIn size={16} /> Log in</Link>
+  }
+  const go = (to) => { setOpen(false); navigate(to) }
+  const logOut = async (everywhere) => {
+    setOpen(false)
+    if (everywhere) { try { await api.post('/auth/logout/') } catch { /* already invalid */ } }
+    clearAuth()
+    navigate('/')
+  }
+  const initial = (user.display_name || user.username).slice(0, 1).toUpperCase()
+  return (
+    <div className="popover-wrap" ref={ref}>
+      <button type="button" className="avatar" aria-label={`Account: ${user.display_name}`} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {initial}
+      </button>
+      {open && (
+        <div className="popover account-menu" role="menu">
+          <div className="account-who">
+            <strong>{user.display_name}</strong>
+            <span className="muted small">@{user.username}</span>
+          </div>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => go('/my-posts')}><FileText size={16} /> My posts</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => go('/trash')}><Trash2 size={16} /> Trash</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => go('/notifications')}><Settings size={16} /> Notification settings</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => logOut(false)}><LogOut size={16} /> Log out</button>
+          <button type="button" role="menuitem" className="menu-item small muted" onClick={() => logOut(true)}>Log out on all devices</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Keeps the server's copy of this device's notification settings in step with the app. */
 function PushSync() {
   const { slugs, push, setPush } = useFollows()
@@ -115,6 +169,7 @@ function PushSync() {
 
 export default function Layout() {
   const { pathname } = useLocation()
+  const { loggedIn } = useAuth()
 
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
 
@@ -132,12 +187,9 @@ export default function Layout() {
             <NavLink to="/explore" className={link}>Explore</NavLink>
           </nav>
           <div className="header-actions">
-            <NavLink to="/trash" className={({ isActive }) => `nav-link header-trash${isActive ? ' active' : ''}`}
-              title="Deleted posts and categories. Restore them within 30 days.">
-              <Trash2 size={18} /> Trash
-            </NavLink>
             <Notifications />
             <Link to="/create" className="btn btn-primary btn-sm header-create"><Plus size={16} /> Create Announcement</Link>
+            <AccountMenu />
           </div>
         </div>
       </header>
@@ -153,7 +205,9 @@ export default function Layout() {
         <NavLink to="/categories" className={link}><LayoutGrid size={22} /><span>Categories</span></NavLink>
         <NavLink to="/create" className="nav-create" aria-label="Create announcement"><Plus size={28} strokeWidth={2.6} /></NavLink>
         <NavLink to="/explore" className={link}><Compass size={22} /><span>Explore</span></NavLink>
-        <NavLink to="/trash" className={link}><Trash2 size={22} /><span>Trash</span></NavLink>
+        {loggedIn
+          ? <NavLink to="/my-posts" className={link}><FileText size={22} /><span>My posts</span></NavLink>
+          : <NavLink to="/login" className={link}><LogIn size={22} /><span>Log in</span></NavLink>}
       </nav>
     </div>
   )

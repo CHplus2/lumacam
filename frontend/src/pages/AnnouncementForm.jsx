@@ -7,14 +7,13 @@ import { EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { CONTACT_METHODS, emptyCategory, todayISO } from '../utils'
 import { CategoryFields, Field } from '../components/fields'
 import { PickupInput, StockPicker } from '../components/selling'
-import EditLink from '../components/EditLink'
-import { saveToken, tokenFor } from '../ownership'
+import { useAuth } from '../auth'
 import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
 const NEW_CATEGORY = '__new__'
 const MAX_PICK_MB = 20 // larger photos are downsized before upload
 const empty = {
-  publisher_name: '', title: '', category: '', description: '', contact_method: 'none',
+  title: '', category: '', description: '', contact_method: 'none',
   contact_info: '', external_url: '', expires_at: '', event_start: '', event_end: '',
   availability: 'available', pickup_locations: [],
 }
@@ -25,6 +24,8 @@ export default function AnnouncementForm() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { categories, loading: catLoading } = useCategories()
+  const { user } = useAuth()
+  const [canEdit, setCanEdit] = useState(false)
   // ?category=<id> preselects a category (e.g. from an empty category page).
   const [form, setForm] = useState(() => ({ ...empty, category: params.get('category') || '' }))
   const [newCat, setNewCat] = useState(emptyCategory)
@@ -49,13 +50,14 @@ export default function AnnouncementForm() {
     api.get(`/announcements/${id}/`)
       .then(({ data }) => {
         setForm({
-          publisher_name: data.publisher_name, title: data.title, category: String(data.category),
+          title: data.title, category: String(data.category),
           description: data.description, contact_method: data.contact_method, contact_info: data.contact_info,
           external_url: data.external_url || '', expires_at: data.expires_at || '',
           event_start: data.event_start || '', event_end: data.event_end || '',
           availability: data.availability || 'available', pickup_locations: data.pickup_locations || [],
         })
         setExistingImage(data.image_url)
+        setCanEdit(Boolean(data.can_edit))
       })
       .catch((e) => (e.response?.status === 404 ? setNotFound(true) : setError(parseError(e).message)))
       .finally(() => setLoading(false))
@@ -143,7 +145,7 @@ export default function AnnouncementForm() {
         ? await api.patch(`/announcements/${id}/`, body)
         : await api.post('/announcements/', body)
       if (editing) navigate(`/announcements/${data.id}`, { replace: true })
-      else { saveToken(data.id, data.edit_token); setSuccess(data) }
+      else setSuccess(data)
     } catch (err) {
       const parsed = err.parsed || parseError(err)
       setError(err.parsed ? `New category: ${parsed.message}` : parsed.message)
@@ -155,8 +157,8 @@ export default function AnnouncementForm() {
   if (loading || catLoading) return <Spinner />
   if (notFound) return <EmptyState title="Announcement not found" text="It may have been deleted."
     action={<Link to="/explore" className="btn btn-primary">Browse announcements</Link>} />
-  if (editing && !tokenFor(id)) {
-    return <EmptyState title="You can't edit this post" text="Only the person who posted it can edit it, from the browser they posted with (or with their private edit link)."
+  if (editing && !canEdit) {
+    return <EmptyState title="You can't edit this post" text="Only the account that posted it can edit it."
       action={<Link to={`/announcements/${id}`} className="btn btn-primary">Back to the post</Link>} />
   }
 
@@ -164,8 +166,7 @@ export default function AnnouncementForm() {
     return (
       <div className="card center-card">
         <h1>Your announcement is live</h1>
-        <p className="muted">Everyone can see it now. Only you can edit or delete it, from this browser.</p>
-        <EditLink id={success.id} />
+        <p className="muted">Everyone can see it now. Only you can edit or delete it: find it any time under My posts.</p>
         <div className="row">
           <Link to={`/announcements/${success.id}`} className="btn btn-primary">View announcement</Link>
           <button className="btn" onClick={() => {
@@ -187,9 +188,7 @@ export default function AnnouncementForm() {
       {!editing && <p className="muted">No account needed. Your post appears as soon as you submit it.</p>}
       <ErrorBox message={error} />
 
-      <Field label="Your name" htmlFor="publisher_name" error={fields.publisher_name} hint="Shown as the publisher">
-        <input id="publisher_name" value={form.publisher_name} onChange={set('publisher_name')} maxLength={80} required autoComplete="name" />
-      </Field>
+      {!editing && <p className="muted small posting-as">Posting as <strong>{user?.display_name}</strong></p>}
 
       <Field label="Title" htmlFor="title" error={fields.title}>
         <input id="title" value={form.title} onChange={set('title')} maxLength={120} required placeholder="e.g. Homemade nasi lemak, daily pre-order" />

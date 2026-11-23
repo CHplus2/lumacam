@@ -11,11 +11,10 @@ from rest_framework.test import APIClient, APITestCase
 
 from announcements.models import Announcement, Category, StoredFile
 
+from accounts.models import User
 from announcements.ownership import hash_token
 
-# Most tests act as the poster: every new post gets this edit key and the test
-# client sends it. Ownership tests below use other keys explicitly.
-OWNER_TOKEN = 'test-owner-key-0123456789abcdef'
+PW = 'Campus-pass-2026'
 
 
 def image_file(fmt='PNG', size=(20, 20), name='pic.png', color='red'):
@@ -29,17 +28,15 @@ class BaseCase(APITestCase):
         cache.clear()  # reset rate-limit counters
         self.cat = Category.objects.get(slug='food-drinks')
         self.other_cat = Category.objects.get(slug='events')
+        # Most tests act as one logged-in student who owns the posts they make.
+        self.user = User.objects.create_user('alice', password=PW, first_name='Alice')
         self.client = APIClient()
-        self.client.credentials(HTTP_X_EDIT_TOKEN=OWNER_TOKEN)
-        from unittest import mock
-        patcher = mock.patch('announcements.ownership.new_token', return_value=OWNER_TOKEN)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        self.client.force_authenticate(self.user)
 
     def make(self, status='approved', **kw):
         data = dict(title='Nasi lemak', description='Delicious lunch pickup', category=self.cat,
                     publisher_name='Alice', contact_method='whatsapp', contact_info='60123456789', status=status,
-                    edit_token_hash=hash_token(OWNER_TOKEN))
+                    publisher=self.user)
         data.update(kw)
         return Announcement.objects.create(**data)
 
@@ -54,14 +51,40 @@ class BaseCase(APITestCase):
         return [a['title'] for a in self.client.get(url).data['results']]
 
 
-class NoLoginTests(BaseCase):
-    def test_auth_endpoints_are_gone(self):
-        for url in ('/api/auth/login/', '/api/auth/me/', '/api/admin/stats/'):
-            self.assertEqual(self.client.get(url).status_code, 404, url)
+class AuthTests(BaseCase):
+    def test_register_then_use_token(self):
+        c = APIClient()
+        r = c.post('/api/auth/register/', {'username': 'priya_k', 'display_name': '  Priya   Kumar ', 'password': PW})
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data['user']['display_name'], 'Priya Kumar')
+        c.credentials(HTTP_AUTHORIZATION=f"Token {r.data['token']}")
+        self.assertEqual(c.get('/api/auth/me/').data['username'], 'priya_k')
+        post = c.post('/api/announcements/', self.payload())
+        self.assertEqual((post.status_code, post.data['publisher_name']), (201, 'Priya Kumar'))
 
-    def test_no_csrf_needed_for_writes(self):
-        c = APIClient(enforce_csrf_checks=True)
-        self.assertEqual(c.post('/api/announcements/', self.payload()).status_code, 201)
+    def test_register_validation(self):
+        c = APIClient()
+        self.assertIn('username', c.post('/api/auth/register/', {'username': 'ALICE', 'display_name': 'A2', 'password': PW}).data)
+        self.assertIn('username', c.post('/api/auth/register/', {'username': 'a b', 'display_name': 'Ab', 'password': PW}).data)
+        self.assertIn('password', c.post('/api/auth/register/', {'username': 'newbie', 'display_name': 'New', 'password': '123'}).data)
+        self.assertIn('display_name', c.post('/api/auth/register/', {'username': 'newbie', 'display_name': ' ', 'password': PW}).data)
+
+    def test_login_is_case_insensitive_and_reuses_token(self):
+        c = APIClient()
+        a = c.post('/api/auth/login/', {'username': 'ALICE', 'password': PW})
+        b = c.post('/api/auth/login/', {'username': 'alice', 'password': PW})
+        self.assertEqual((a.status_code, a.data['token']), (200, b.data['token']))  # log in once, many devices
+        self.assertEqual(c.post('/api/auth/login/', {'username': 'alice', 'password': 'nope'}).status_code, 400)
+
+    def test_logout_invalidates_token(self):
+        c = APIClient()
+        token = c.post('/api/auth/login/', {'username': 'alice', 'password': PW}).data['token']
+        c.credentials(HTTP_AUTHORIZATION=f'Token {token}')
+        self.assertEqual(c.post('/api/auth/logout/').status_code, 204)
+        self.assertEqual(c.get('/api/auth/me/').status_code, 401)
+
+    def test_password_is_hashed(self):
+        self.assertTrue(User.objects.get(username='alice').password.startswith('pbkdf2'))
 
 
 class CreateTests(BaseCase):
@@ -70,10 +93,17 @@ class CreateTests(BaseCase):
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(self.public_titles(), ['Fresh cookies'])
 
-    def test_name_required(self):
-        r = self.client.post('/api/announcements/', self.payload(publisher_name=' '))
-        self.assertEqual(r.status_code, 400)
-        self.assertIn('publisher_name', r.data)
+    def test_publisher_is_the_logged_in_account(self):
+        r = self.client.post('/api/announcements/', self.payload(publisher_name='Someone else'))
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data['publisher_name'], 'Alice')
+        self.assertEqual(Announcement.objects.get(pk=r.data['id']).publisher, self.user)
+        self.assertTrue(r.data['can_edit'])
+
+    def test_posting_needs_login(self):
+        r = APIClient().post('/api/announcements/', self.payload())
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(APIClient().get('/api/announcements/').status_code, 200)  # browsing stays open
 
     def test_post_rate_limit(self):
         codes = [self.client.post('/api/announcements/', self.payload()).status_code for _ in range(11)]
@@ -251,21 +281,39 @@ class CategoryTests(BaseCase):
         self.assertFalse(Category.objects.get(pk=cat_id).is_removed)
 
     def test_expired_posts_also_block_delete(self):
-        self.make(expires_at=timezone.localdate() - timedelta(days=1))
-        self.assertEqual(self.client.delete(f'/api/categories/{self.cat.id}/').status_code, 400)
+        cat = Category.objects.create(name='Clubs', slug='clubs', icon='tag', created_by=self.user)
+        self.make(category=cat, expires_at=timezone.localdate() - timedelta(days=1))
+        self.assertEqual(self.client.delete(f'/api/categories/{cat.id}/').status_code, 400)
 
     def test_removed_posts_do_not_block_delete(self):
-        self.make(status='removed')
-        self.assertEqual(self.client.delete(f'/api/categories/{self.cat.id}/').status_code, 204)
+        cat = Category.objects.create(name='Clubs', slug='clubs', icon='tag', created_by=self.user)
+        self.make(category=cat, status='removed')
+        self.assertEqual(self.client.delete(f'/api/categories/{cat.id}/').status_code, 204)
 
-    def test_builtin_categories_can_be_deleted_when_empty(self):
+    def test_original_categories_cannot_be_deleted_in_the_app(self):
         other = Category.objects.get(slug='other')
-        self.assertEqual(self.client.delete(f'/api/categories/{other.id}/').status_code, 204)
-        self.assertEqual(len(self.client.get('/api/categories/').data), 5)
+        r = self.client.delete(f'/api/categories/{other.id}/')
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('site admin', r.data['detail'])
+        self.assertEqual(len(self.client.get('/api/categories/').data), 6)
+
+    def test_only_creator_can_delete_category(self):
+        cat_id = self.client.post('/api/categories/', self.new).data['id']
+        bob = User.objects.create_user('bob', password=PW)
+        other = APIClient(); other.force_authenticate(bob)
+        self.assertEqual(other.delete(f'/api/categories/{cat_id}/').status_code, 403)
+        self.assertIn(APIClient().delete(f'/api/categories/{cat_id}/').status_code, (401, 403))
+        self.assertTrue(self.client.get('/api/categories/').data[-2]['can_delete'])
+        self.assertFalse(other.get('/api/categories/').data[-2]['can_delete'])
+        self.assertEqual(self.client.delete(f'/api/categories/{cat_id}/').status_code, 204)
+
+    def test_creating_a_category_needs_login(self):
+        self.assertEqual(APIClient().post('/api/categories/', self.new).status_code, 401)
 
     def test_cannot_post_into_deleted_category(self):
-        self.client.delete(f'/api/categories/{self.other_cat.id}/')
-        r = self.client.post('/api/announcements/', self.payload(category=self.other_cat.id))
+        cat = Category.objects.create(name='Clubs', slug='clubs', icon='tag', created_by=self.user)
+        self.client.delete(f'/api/categories/{cat.id}/')
+        r = self.client.post('/api/announcements/', self.payload(category=cat.id))
         self.assertEqual(r.status_code, 400)
         self.assertIn('no longer exists', r.data['category'][0])
 
@@ -289,7 +337,7 @@ class CategoryTests(BaseCase):
 
 
 class LiveFlowTests(LiveServerTestCase):
-    """Real HTTP requests, the way the browser talks to the API."""
+    """Real HTTP requests with a real token, the way the browser talks to the API."""
 
     def setUp(self):
         import urllib.request
@@ -298,9 +346,10 @@ class LiveFlowTests(LiveServerTestCase):
 
     def call(self, method, path, body=None, token=None):
         data = json.dumps(body).encode() if body is not None else None
-        req = self.urllib.Request(self.live_server_url + path, data=data, method=method,
-                                  headers={'Content-Type': 'application/json',
-                                           **({'X-Edit-Token': token} if token else {})})
+        headers = {'Content-Type': 'application/json'}
+        if token:
+            headers['Authorization'] = f'Token {token}'
+        req = self.urllib.Request(self.live_server_url + path, data=data, method=method, headers=headers)
         try:
             with self.urllib.urlopen(req) as r:
                 raw = r.read()
@@ -309,20 +358,20 @@ class LiveFlowTests(LiveServerTestCase):
             raw = e.read()
             return e.code, (json.loads(raw) if raw else None)
 
-    def test_post_edit_delete_without_login(self):
+    def test_sign_up_post_edit_delete(self):
         cat = Category.objects.get(slug='events')
-        payload = {'title': 'Hack night', 'description': 'Join us for a coding night.', 'category': cat.id,
-                   'publisher_name': 'Carol', 'contact_method': 'link', 'contact_info': 'https://example.com/signup'}
-        status, ann = self.call('POST', '/api/announcements/', payload)
-        self.assertEqual(status, 201, ann)
-        listing = self.call('GET', '/api/announcements/?category=events&search=hack')[1]
-        self.assertEqual([a['id'] for a in listing['results']], [ann['id']])
-        self.assertTrue(ann['edit_token'])
-        self.assertEqual(self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Stolen'})[0], 403)
-        status, edited = self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Hack night v2'}, ann['edit_token'])
+        status, me = self.call('POST', '/api/auth/register/', {'username': 'carol', 'display_name': 'Carol', 'password': PW})
+        self.assertEqual(status, 201, me)
+        token = me['token']
+        payload = {'title': 'Hack night', 'description': 'Join us for a coding night.', 'category': cat.id}
+        self.assertEqual(self.call('POST', '/api/announcements/', payload)[0], 401)
+        status, ann = self.call('POST', '/api/announcements/', payload, token)
+        self.assertEqual((status, ann['publisher_name']), (201, 'Carol'))
+        _, other = self.call('POST', '/api/auth/register/', {'username': 'dave', 'display_name': 'Dave', 'password': PW})
+        self.assertEqual(self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Stolen'}, other['token'])[0], 403)
+        status, edited = self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Hack night v2'}, token)
         self.assertEqual((status, edited['title']), (200, 'Hack night v2'))
-        self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/")[0], 403)
-        self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/", token=ann['edit_token'])[0], 204)
+        self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/", token=token)[0], 204)
         self.assertEqual(self.call('GET', '/api/announcements/')[1]['count'], 0)
 
 
@@ -470,12 +519,15 @@ class TrashTests(BaseCase):
         self.assertEqual(self.public_titles('/api/announcements/?category=clubs'), ['Fresh cookies'])
 
     def test_restore_category(self):
-        self.client.delete(f'/api/categories/{self.other_cat.id}/')
-        self.assertEqual(self.trash_cats(), [self.other_cat.id])
-        r = self.client.post(f'/api/trash/categories/{self.other_cat.id}/restore/')
-        self.assertEqual((r.status_code, r.data['slug']), (200, 'events'))
+        cat = Category.objects.create(name='Clubs', slug='clubs', icon='tag', created_by=self.user)
+        self.client.delete(f'/api/categories/{cat.id}/')
+        self.assertEqual(self.trash_cats(), [cat.id])
+        bob = APIClient(); bob.force_authenticate(User.objects.create_user('bob', password=PW))
+        self.assertEqual(bob.get('/api/trash/categories/').data, [])
+        self.assertEqual(bob.post(f'/api/trash/categories/{cat.id}/restore/').status_code, 403)
+        r = self.client.post(f'/api/trash/categories/{cat.id}/restore/')
+        self.assertEqual((r.status_code, r.data['slug']), (200, 'clubs'))
         self.assertEqual(self.trash_cats(), [])
-        self.assertIn('events', [c['slug'] for c in self.client.get('/api/categories/').data])
 
     def test_old_items_are_purged(self):
         old, recent = self.make(title='old'), self.make(title='recent')
@@ -494,7 +546,7 @@ class TrashTests(BaseCase):
         self.assertEqual(StoredFile.objects.count(), 0)
 
     def test_category_waits_for_its_trashed_posts(self):
-        cat = Category.objects.create(name='Temp', slug='temp', icon='tag')
+        cat = Category.objects.create(name='Temp', slug='temp', icon='tag', created_by=self.user)
         ann = self.make(category=cat)
         self.client.delete(f'/api/announcements/{ann.id}/')
         self.client.delete(f'/api/categories/{cat.id}/')
@@ -917,79 +969,64 @@ class PushTests(BaseCase):
 
 
 class OwnershipTests(BaseCase):
-    """Only the browser that posted (it holds the edit key) can change a post."""
+    """Only the account that posted can change a post."""
 
     def setUp(self):
         super().setUp()
-        from unittest import mock
-        mock.patch.stopall()  # use real random keys here
-        self.anon = APIClient()
-
-    def create(self, **kw):
-        r = self.anon.post('/api/announcements/', self.payload(**kw), format='json')
-        self.assertEqual(r.status_code, 201, r.data)
-        return r.data
-
-    def as_key(self, key):
-        c = APIClient()
-        if key:
-            c.credentials(HTTP_X_EDIT_TOKEN=key)
-        return c
-
-    def test_create_returns_a_secret_key_once(self):
-        a = self.create()
-        key = a['edit_token']
-        self.assertGreaterEqual(len(key), 30)
-        self.assertTrue(a['can_edit'])
-        stored = Announcement.objects.get(pk=a['id']).edit_token_hash
-        self.assertEqual(stored, hash_token(key))
-        self.assertNotIn(key, stored)
-        public = self.anon.get(f"/api/announcements/{a['id']}/").data
-        self.assertNotIn('edit_token', public)
-        self.assertFalse(public['can_edit'])
-        self.assertTrue(self.as_key(key).get(f"/api/announcements/{a['id']}/").data['can_edit'])
-        self.assertNotEqual(key, self.create()['edit_token'])  # every post gets its own key
+        self.bob = APIClient()
+        self.bob.force_authenticate(User.objects.create_user('bob', password=PW, first_name='Bob'))
 
     def test_others_cannot_edit_delete_or_change_stock(self):
-        a = self.create(title='Brownies', availability='out')
+        a = self.client.post('/api/announcements/', self.payload(title='Brownies', availability='out'), format='json').data
         url = f"/api/announcements/{a['id']}/"
-        for client in (self.anon, self.as_key('wrong-key'), self.as_key(self.create()['edit_token'])):
-            r = client.patch(url, {'availability': 'available'}, format='json')
-            self.assertEqual(r.status_code, 403)
-            self.assertIn('Only the person who posted this', r.data['detail'])
-            self.assertEqual(client.patch(url, {'title': 'Hacked'}, format='json').status_code, 403)
-            self.assertEqual(client.delete(url).status_code, 403)
+        r = self.bob.patch(url, {'availability': 'available'}, format='json')
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('Only the person who posted this', r.data['detail'])
+        self.assertEqual(self.bob.delete(url).status_code, 403)
+        self.assertEqual(APIClient().patch(url, {'title': 'x'}, format='json').status_code, 401)
+        self.assertFalse(self.bob.get(url).data['can_edit'])
         a2 = Announcement.objects.get(pk=a['id'])
         self.assertEqual((a2.title, a2.availability, a2.status), ('Brownies', 'out', 'approved'))
 
     def test_owner_can_edit_stock_and_delete(self):
-        a = self.create(availability='out')
-        owner = self.as_key(a['edit_token'])
+        a = self.client.post('/api/announcements/', self.payload(availability='out'), format='json').data
         url = f"/api/announcements/{a['id']}/"
-        self.assertEqual(owner.patch(url, {'availability': 'available'}, format='json').data['availability'], 'available')
-        self.assertEqual(owner.delete(url).status_code, 204)
+        self.assertEqual(self.client.patch(url, {'availability': 'available'}, format='json').data['availability'], 'available')
+        self.assertEqual(self.client.delete(url).status_code, 204)
 
-    def test_posts_without_a_key_are_admin_only(self):
-        legacy = Announcement.objects.create(title='Old post', description='Made before edit keys.', category=self.cat,
+    def test_posts_without_an_owner_are_admin_only(self):
+        legacy = Announcement.objects.create(title='Old post', description='Made before accounts.', category=self.cat,
                                              publisher_name='Priya', status='approved')
-        r = self.as_key('anything').patch(f'/api/announcements/{legacy.id}/', {'title': 'x'}, format='json')
+        r = self.client.patch(f'/api/announcements/{legacy.id}/', {'title': 'x'}, format='json')
         self.assertEqual(r.status_code, 403)
         self.assertIn('site admin', r.data['detail'])
-        self.assertFalse(self.anon.get(f'/api/announcements/{legacy.id}/').data['can_edit'])
 
-    def test_only_owner_can_restore_from_trash(self):
-        a = self.create()
-        owner = self.as_key(a['edit_token'])
-        owner.delete(f"/api/announcements/{a['id']}/")
-        restore = f"/api/trash/announcements/{a['id']}/restore/"
-        self.assertEqual(self.anon.post(restore).status_code, 403)
-        self.assertEqual(self.as_key('wrong').post(restore).status_code, 403)
-        self.assertEqual(owner.post(restore).status_code, 200)
+    def test_trash_is_per_account(self):
+        mine = self.make(title='Mine')
+        self.client.delete(f'/api/announcements/{mine.id}/')
+        self.assertEqual(self.bob.get('/api/trash/announcements/').data['count'], 0)
+        self.assertEqual(APIClient().get('/api/trash/announcements/').data['count'], 0)
+        self.assertEqual(self.bob.post(f'/api/trash/announcements/{mine.id}/restore/').status_code, 403)
+        self.assertEqual(self.client.post(f'/api/trash/announcements/{mine.id}/restore/').status_code, 200)
 
-    def test_trash_lists_only_requested_ids(self):
-        mine, theirs = self.create(title='Mine'), self.create(title='Theirs')
-        for p in (mine, theirs):
-            self.as_key(p['edit_token']).delete(f"/api/announcements/{p['id']}/")
-        self.assertEqual(self.anon.get('/api/trash/announcements/').data['count'], 0)
-        r = self.anon.get(f"/api/trash/announcements/?ids={mine['id']},abc")
-        self.assertEqual([x['title'] for x in r.data['results']], ['Mine'])
+    def test_my_posts_filter(self):
+        self.make(title='Mine')
+        Announcement.objects.create(title='Theirs', description='Someone else posted this.', category=self.cat,
+                                    publisher_name='Bob', status='approved')
+        self.assertEqual(self.public_titles('/api/announcements/?mine=1'), ['Mine'])
+        self.assertEqual(APIClient().get('/api/announcements/?mine=1').data['count'], 0)
+
+    def test_claim_posts_made_with_a_browser_key(self):
+        key = 'browser-edit-key-123456'
+        keyed = Announcement.objects.create(title='Keyed', description='Made with an edit key.', category=self.cat,
+                                            publisher_name='Kiro', status='approved', edit_token_hash=hash_token(key))
+        r = self.bob.post('/api/auth/claim/', {'keys': {str(keyed.id): 'wrong'}}, format='json')
+        self.assertEqual(r.data['claimed'], [])
+        r = self.client.post('/api/auth/claim/', {'keys': {str(keyed.id): key, 'x': 'y'}}, format='json')
+        self.assertEqual(r.data['claimed'], [keyed.id])
+        keyed.refresh_from_db()
+        self.assertEqual((keyed.publisher, keyed.edit_token_hash), (self.user, ''))
+        self.assertEqual(self.bob.post('/api/auth/claim/', {'keys': {str(keyed.id): key}}, format='json').data['claimed'], [])
+        self.assertEqual(APIClient().post('/api/auth/claim/', {'keys': {}}, format='json').status_code, 401)
+
+

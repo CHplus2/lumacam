@@ -139,7 +139,14 @@ label { font-weight: 600; font-size: 0.9rem; }
 .cat-card.cat-card-new { background: transparent; border: 2px dashed var(--border); color: var(--muted); }
 .cat-card.cat-card-new .cat-symbol { color: var(--primary); }
 .cat-card.cat-card-new:hover { border-color: var(--primary); }
-.header-trash { display: inline-flex; align-items: center; gap: 6px; }
+.account-menu { width: 240px; display: flex; flex-direction: column; gap: 2px; padding: 8px; }
+.account-who { display: flex; flex-direction: column; padding: 6px 8px 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px; border: 0; border-radius: 8px; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.menu-item:hover, .menu-item:focus-visible { background: #f3f4f8; }
+.menu-item.small { font-size: 0.82rem; }
+.header-login { white-space: nowrap; }
+.center-text { text-align: center; }
+.posting-as { margin-top: -6px; }
 .bell { position: relative; }
 .bell-count { position: absolute; top: 2px; right: 1px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 0.68rem; font-weight: 700; line-height: 17px; text-align: center; box-shadow: 0 0 0 2px #fff; }
 .popover.notif { width: 300px; display: flex; flex-direction: column; gap: 10px; max-height: min(520px, 75vh); overflow-y: auto; }
@@ -388,7 +395,7 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   .nav-mobile { display: flex; position: fixed; left: 0; right: 0; bottom: 0; height: var(--nav-h); z-index: 30; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px); border-top: 1px solid var(--border); justify-content: space-around; align-items: center; padding: 0 6px env(safe-area-inset-bottom); }
   .nav-mobile .nav-link { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 0.68rem; padding: 6px 8px; min-width: 56px; background: transparent; }
   .nav-mobile .nav-link.active { color: var(--primary); background: transparent; }
-  .header-trash { display: none; }
+  .header-login { padding: 6px 10px; }
   .popover.notif { position: fixed; top: calc(var(--header-h) + 6px); left: 12px; right: 12px; width: auto; }
   .nav-create { width: 56px; height: 56px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; margin-top: -26px; box-shadow: 0 8px 18px rgba(79, 70, 229, 0.45); border: 4px solid var(--bg); }
   .nav-create:hover { text-decoration: none; background: var(--primary-dark); }

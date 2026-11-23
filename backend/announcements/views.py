@@ -11,7 +11,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
@@ -81,14 +81,17 @@ def apply_search(qs, term):
 
 
 class CategoryListView(generics.ListCreateAPIView):
-    """List categories; anyone can add one and it is live immediately."""
+    """List categories; logged-in users can add one and it is live immediately."""
     serializer_class = CategorySerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = None
     throttle_scope = 'category'
 
     def get_throttles(self):
         return super().get_throttles() if self.request.method == 'POST' else []
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
     def get_queryset(self):
         today = timezone.localdate()
@@ -101,12 +104,12 @@ class CategoryListView(generics.ListCreateAPIView):
 
 
 class CategoryDetailView(generics.RetrieveDestroyAPIView):
-    """Anyone can delete a category, but only once it has no posts.
+    """The account that created a category can delete it, once it has no posts.
 
-    Delete hides the category (restorable in /django-admin/); nothing is moved.
+    Delete moves it to the Trash; nothing is moved. The original six have no creator.
     """
     serializer_class = CategorySerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     queryset = Category.objects.filter(is_removed=False)
     throttle_scope = 'modify'
 
@@ -115,6 +118,9 @@ class CategoryDetailView(generics.RetrieveDestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         cat = self.get_object()
+        if not ownership.owns(request.user, cat, 'created_by_id'):
+            raise PermissionDenied('Only the person who created this category can delete it.'
+                                   if cat.created_by_id else 'The original categories can only be removed by the site admin.')
         # Count expired posts too: they can still be opened and edited by link.
         posts = cat.announcements.filter(status=Announcement.Status.APPROVED).count()
         if posts:
@@ -130,9 +136,9 @@ class CategoryDetailView(generics.RetrieveDestroyAPIView):
 
 
 class AnnouncementListCreateView(generics.ListCreateAPIView):
-    """Public browsing and posting. No account needed; posts are live immediately."""
+    """Anyone can browse; posting needs an account. Posts are live immediately."""
     serializer_class = AnnouncementSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     throttle_scope = 'announce'
 
@@ -145,6 +151,8 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
         qs = public_queryset()
         if p.get('category'):
             qs = qs.filter(category__slug=p['category'])
+        if p.get('mine') == '1':  # "My posts"
+            qs = qs.filter(publisher=self.request.user) if self.request.user.is_authenticated else qs.none()
         # Several categories at once (used by "followed categories" notifications).
         if p.get('categories'):
             qs = qs.filter(category__slug__in=[c for c in p['categories'].split(',') if c][:50])
@@ -173,17 +181,10 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
             return qs.order_by(F(order).asc(nulls_last=True), '-created_at', '-id')
         return qs.order_by(order, '-id')
 
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        # Shown once: the browser stores it to edit or delete this post later.
-        response.data['edit_token'] = self._edit_token
-        response.data['can_edit'] = True
-        return response
-
     def perform_create(self, serializer):
-        self._edit_token = ownership.new_token()
-        announcement = serializer.save(status=Announcement.Status.APPROVED,
-                                       edit_token_hash=ownership.hash_token(self._edit_token))
+        user = self.request.user
+        announcement = serializer.save(status=Announcement.Status.APPROVED, publisher=user,
+                                       publisher_name=user.display_name[:80])
         try:
             push.notify_new_announcement(announcement)
         except Exception:  # notifications must never block posting
@@ -191,12 +192,12 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
 
 
 class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """Anyone can view a post; only its poster (edit key in X-Edit-Token) can edit or delete it.
+    """Anyone can view a post; only the account that posted it can edit or delete it.
 
     Delete moves the post to the Trash, where its poster can restore it.
     """
     serializer_class = AnnouncementSerializer
-    permission_classes = [ownership.IsOwnerOrReadOnly]
+    permission_classes = [ownership.IsPublisherOrReadOnly]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     throttle_scope = 'modify'
 
@@ -332,10 +333,12 @@ class TrashAnnouncementListView(generics.ListAPIView):
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
-        # Only the posts this browser made (?ids=, from its stored edit keys).
-        ids = [int(i) for i in self.request.query_params.get('ids', '').split(',') if i.strip().isdigit()][:200]
+        # Only your own deleted posts.
+        user = self.request.user
+        if not user.is_authenticated:
+            return Announcement.objects.none()
         qs = (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
-              .filter(status=Announcement.Status.REMOVED, pk__in=ids).order_by('-removed_at', '-id'))
+              .filter(status=Announcement.Status.REMOVED, publisher=user).order_by('-removed_at', '-id'))
         return apply_search(qs, self.request.query_params.get('search'))
 
 
@@ -349,29 +352,33 @@ class TrashCategoryListView(generics.ListAPIView):
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return Category.objects.none()
         trashed = Q(announcements__status=Announcement.Status.REMOVED)
-        return (Category.objects.filter(is_removed=True)
+        return (Category.objects.filter(is_removed=True, created_by=self.request.user)
                 .annotate(trashed_posts=Count('announcements', filter=trashed),
                           latest_post_removed_at=Max('announcements__removed_at', filter=trashed))
                 .order_by('-removed_at', 'name'))
 
 
 class TrashRestoreView(APIView):
-    """Restore a post or category from the Trash."""
-    permission_classes = [AllowAny]
+    """Restore your own post or category from the Trash."""
+    permission_classes = [IsAuthenticated]
     throttle_scope = 'modify'
     kind = None  # 'announcement' or 'category'
 
     def post(self, request, pk):
         if self.kind == 'category':
             cat = get_object_or_404(Category, pk=pk, is_removed=True)
+            if not ownership.owns(request.user, cat, 'created_by_id'):
+                raise PermissionDenied('Only the person who created this category can restore it.')
             cat.is_removed, cat.removed_at = False, None
             cat.save(update_fields=['is_removed', 'removed_at'])
             return Response({'restored': 'category', 'id': cat.id, 'slug': cat.slug, 'name': cat.name})
         ann = get_object_or_404(Announcement.objects.select_related('category'),
                                 pk=pk, status=Announcement.Status.REMOVED)
-        if not ownership.is_owner(ann, ownership.token_from(request)):
-            raise PermissionDenied(ownership.NOT_OWNER if ann.edit_token_hash else ownership.LEGACY)
+        if not ownership.owns(request.user, ann):
+            raise PermissionDenied(ownership.NOT_OWNER if ann.publisher_id else ownership.LEGACY)
         restored_category = None
         if ann.category.is_removed:  # a post can't live in a trashed category
             ann.category.is_removed, ann.category.removed_at = False, None

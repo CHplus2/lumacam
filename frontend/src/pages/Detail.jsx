@@ -4,13 +4,13 @@ import { ArrowLeft, Calendar, ExternalLink, Lock, Mail, MessageCircle, Pencil, T
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Spinner } from '../components/ui'
 import { PickupTags, StockBadge, StockPicker } from '../components/selling'
-import EditLink from '../components/EditLink'
-import { saveToken, tokenFor } from '../ownership'
+import { useAuth } from '../auth'
 import { contactLink, fmtAgo, fmtDate, fmtDay, safeUrl, stockLabel, TRASH_DAYS } from '../utils'
 
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { loggedIn } = useAuth()
   const [deleting, setDeleting] = useState(false)
   const [actionError, setActionError] = useState('')
   const [a, setA] = useState(null)
@@ -22,17 +22,8 @@ export default function Detail() {
 
   useEffect(() => {
     setLoading(true); setNotFound(false); setError('')
-    // A private edit link (#key=...) adds this post's key to this browser, if the key is right.
-    const linkKey = new URLSearchParams(window.location.hash.slice(1)).get('key')
-    const headers = linkKey && !tokenFor(id) ? { 'X-Edit-Token': linkKey } : undefined
-    api.get(`/announcements/${id}/`, { headers })
-      .then(({ data }) => {
-        if (linkKey) {
-          if (data.can_edit) saveToken(id, linkKey)
-          window.history.replaceState(null, '', window.location.pathname + window.location.search)
-        }
-        setA(data)
-      })
+    api.get(`/announcements/${id}/`)
+      .then(({ data }) => setA(data))
       .catch((e) => (e.response?.status === 404 ? setNotFound(true) : setError(parseError(e).message)))
       .finally(() => setLoading(false))
   }, [id])
@@ -154,11 +145,11 @@ export default function Detail() {
                 <Trash2 size={15} /> {deleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
-            <EditLink id={a.id} compact />
           </div>
         ) : (
           <p className="muted small manage owner-note">
             <Lock size={13} className="inline" /> Only the person who posted this can edit or delete it.
+            {!loggedIn && <> <Link to={`/login?next=/announcements/${a.id}`}>Log in</Link> to manage your own posts.</>}
           </p>
         )}
       </div>

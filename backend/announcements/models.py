@@ -20,6 +20,9 @@ class Category(models.Model):
     # Categories where students sell food or items get a stock status and
     # pickup place tags on their posts.
     sells_items = models.BooleanField(default=False)
+    # Only the account that created a category can delete it (the original six have none).
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name='categories')
 
     class Meta:
         ordering = ['sort_order', 'name']
@@ -71,7 +74,7 @@ class Announcement(models.Model):
     title = models.CharField(max_length=120)
     description = models.TextField(max_length=3000)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name='announcements')
-    # Unused while the app has no accounts; kept for a future login system.
+    # The account that posted it; only this account can edit, delete or restore it.
     publisher = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL, related_name='announcements')
     publisher_name = models.CharField(max_length=80, default='')
@@ -93,7 +96,8 @@ class Announcement(models.Model):
     availability = models.CharField(max_length=10, choices=Availability.choices, blank=True, default='')
     stock_updated_at = models.DateTimeField(null=True, blank=True)
     pickup_locations = models.ManyToManyField(PickupLocation, blank=True, related_name='announcements')
-    # SHA-256 of the poster's secret edit key (see ownership.py). Empty = only the admin can change it.
+    # Posts made before accounts used a browser edit key; its SHA-256 lets the poster
+    # claim the post into their account (accounts/views.py). Cleared once claimed.
     edit_token_hash = models.CharField(max_length=64, blank=True, default='', editable=False)
 
     class Meta:

@@ -4,7 +4,6 @@ import { ArchiveRestore, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { ICONS, TRASH_DAYS, fmtRelative, timeLeft } from '../utils'
-import { myPostIds } from '../ownership'
 
 const TABS = [
   { key: 'announcements', label: 'Announcements' },
@@ -20,10 +19,8 @@ function useTrashList(tab) {
   const load = useCallback(async (url) => {
     setLoading(true); setError('')
     try {
-      // Announcements: only the ones uploaded from this browser.
-      const params = !url && tab === 'announcements' ? { ids: myPostIds().join(',') } : undefined
-      if (params && !params.ids) { setItems([]); setNext(null); return }
-      const { data } = await api.get(url || `/trash/${tab}/`, { params })
+      // The server only returns your own deleted posts and categories.
+      const { data } = await api.get(url || `/trash/${tab}/`)
       // Announcements are paginated; categories come back as a plain list.
       const results = Array.isArray(data) ? data : data.results
       setItems((prev) => (url ? [...prev, ...results] : results))
@@ -78,7 +75,7 @@ export default function Trash() {
       <div className="section-head">
         <div>
           <h1>Trash</h1>
-          <p className="muted">Deleted posts and categories stay here for {TRASH_DAYS} days, then they are erased for good. You only see posts you deleted from this browser.</p>
+          <p className="muted">Deleted posts and categories stay here for {TRASH_DAYS} days, then they are erased for good. You only see what you deleted.</p>
         </div>
       </div>
 

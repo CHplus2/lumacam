@@ -52,11 +52,13 @@ export default function Categories() {
           {categories.map((c) => (
             <div key={c.id} className="cat-wrap">
               <CategoryCard category={c} />
-              <button className="cat-delete" onClick={() => remove(c)} disabled={deletingId === c.id}
-                aria-label={`Delete category ${c.name}`}
-                title={c.announcement_count ? 'Only empty categories can be deleted' : 'Delete category'}>
-                <Trash2 size={16} />
-              </button>
+              {c.can_delete && (
+                <button className="cat-delete" onClick={() => remove(c)} disabled={deletingId === c.id}
+                  aria-label={`Delete category ${c.name}`}
+                  title={c.announcement_count ? 'Only empty categories can be deleted' : 'Delete category'}>
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
           ))}
           <Link to="/categories/new" className="cat-card cat-card-new">

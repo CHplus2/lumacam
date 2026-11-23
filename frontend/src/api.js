@@ -1,10 +1,31 @@
 import axios from 'axios'
-import { attachEditKey } from './ownership'
+import { authToken, clearAuth } from './auth'
 
-// The API has no accounts, so no cookies or CSRF tokens are needed. Requests about
-// a post this browser uploaded carry that post's edit key (see ownership.js).
+// Logged-in requests carry "Authorization: Token <key>" (no cookies, so no CSRF).
 const api = axios.create({ baseURL: '/api' })
-api.interceptors.request.use(attachEditKey)
+
+api.interceptors.request.use((config) => {
+  const token = authToken()
+  if (token) {
+    if (config.headers && typeof config.headers.set === 'function') config.headers.set('Authorization', `Token ${token}`)
+    else config.headers = { ...(config.headers || {}), Authorization: `Token ${token}` }
+  }
+  return config
+})
+
+// A rejected token (logged out on another device) means this device is logged out
+// too. Retry once without it, so public pages still load.
+api.interceptors.response.use(undefined, (error) => {
+  const config = error.config
+  if (error.response?.status === 401 && authToken() && config && !config._retriedWithoutToken) {
+    clearAuth()
+    config._retriedWithoutToken = true
+    if (config.headers?.delete) config.headers.delete('Authorization')
+    else if (config.headers) delete config.headers.Authorization
+    return api.request(config)
+  }
+  return Promise.reject(error)
+})
 
 /** Turn a DRF error response into { message, fields }. */
 export function parseError(err) {
