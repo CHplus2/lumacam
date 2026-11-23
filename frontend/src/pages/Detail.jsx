@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Calendar, ExternalLink, Mail, MessageCircle, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Calendar, ExternalLink, Lock, Mail, MessageCircle, Pencil, Trash2, UserCheck } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Spinner } from '../components/ui'
 import { PickupTags, StockBadge, StockPicker } from '../components/selling'
+import EditLink from '../components/EditLink'
+import { saveToken, tokenFor } from '../ownership'
 import { contactLink, fmtAgo, fmtDate, fmtDay, safeUrl, stockLabel, TRASH_DAYS } from '../utils'
 
 export default function Detail() {
@@ -20,8 +22,17 @@ export default function Detail() {
 
   useEffect(() => {
     setLoading(true); setNotFound(false); setError('')
-    api.get(`/announcements/${id}/`)
-      .then(({ data }) => setA(data))
+    // A private edit link (#key=...) adds this post's key to this browser, if the key is right.
+    const linkKey = new URLSearchParams(window.location.hash.slice(1)).get('key')
+    const headers = linkKey && !tokenFor(id) ? { 'X-Edit-Token': linkKey } : undefined
+    api.get(`/announcements/${id}/`, { headers })
+      .then(({ data }) => {
+        if (linkKey) {
+          if (data.can_edit) saveToken(id, linkKey)
+          window.history.replaceState(null, '', window.location.pathname + window.location.search)
+        }
+        setA(data)
+      })
       .catch((e) => (e.response?.status === 404 ? setNotFound(true) : setError(parseError(e).message)))
       .finally(() => setLoading(false))
   }, [id])
@@ -94,10 +105,16 @@ export default function Detail() {
               <h3>Stock</h3>
               {a.stock_updated_at && <span className="muted small">Updated {fmtAgo(a.stock_updated_at)}</span>}
             </div>
-            <StockPicker value={a.availability} onChange={setStock} disabled={stockBusy} />
-            {stockNote
-              ? <small className={stockNote.ok ? 'stock-saved' : 'field-error'} role="status">{stockNote.text}</small>
-              : <small className="muted">Selling this? Tap to update it for everyone.</small>}
+            {a.can_edit ? (
+              <>
+                <StockPicker value={a.availability} onChange={setStock} disabled={stockBusy} />
+                {stockNote
+                  ? <small className={stockNote.ok ? 'stock-saved' : 'field-error'} role="status">{stockNote.text}</small>
+                  : <small className="muted">Tap to update it for everyone.</small>}
+              </>
+            ) : (
+              <div><StockBadge value={a.availability} /></div>
+            )}
           </div>
         )}
 
@@ -128,12 +145,22 @@ export default function Detail() {
         )}
 
         <ErrorBox message={actionError} />
-        <div className="row manage">
-          <Link to={`/announcements/${a.id}/edit`} className="btn btn-sm"><Pencil size={15} /> Edit</Link>
-          <button className="btn btn-sm btn-danger" onClick={remove} disabled={deleting}>
-            <Trash2 size={15} /> {deleting ? 'Deleting...' : 'Delete'}
-          </button>
-        </div>
+        {a.can_edit ? (
+          <div className="manage owner-box">
+            <span className="owner-chip"><UserCheck size={14} /> You posted this</span>
+            <div className="row">
+              <Link to={`/announcements/${a.id}/edit`} className="btn btn-sm"><Pencil size={15} /> Edit</Link>
+              <button className="btn btn-sm btn-danger" onClick={remove} disabled={deleting}>
+                <Trash2 size={15} /> {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+            <EditLink id={a.id} compact />
+          </div>
+        ) : (
+          <p className="muted small manage owner-note">
+            <Lock size={13} className="inline" /> Only the person who posted this can edit or delete it.
+          </p>
+        )}
       </div>
     </article>
   )

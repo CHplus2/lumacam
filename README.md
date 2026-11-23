@@ -1,8 +1,10 @@
 # LumaCam
 
-LumaCam is a campus announcement platform. Anyone can browse, post, edit and delete announcements (food, marketplace, events, surveys, opportunities, general notices) and create new categories, **without an account**. Posts appear as soon as they are submitted.
+LumaCam is a campus announcement platform. Anyone can browse and post announcements (food, marketplace, events, surveys, opportunities, general notices) and create new categories, **without an account**. Posts appear as soon as they are submitted, and **only the person who uploaded a post can edit or delete it**.
 
-This open setup is meant for hackathon demos and shared test links. A production version would add university login so people can only change their own posts (see Limitations).
+### Editing your own posts without an account
+
+When you post, the server returns a random secret *edit key* once; your browser keeps it (`localStorage`). Requests to edit, delete, change stock or restore that post send it in the `X-Edit-Token` header, and the server checks it against a stored SHA-256 hash. Everyone else sees the post read-only. To manage a post from another device, use **Copy my private edit link** (the key is in the `#` part of the link, which is never sent to servers). Posts created before this feature have no key and can only be changed in `/django-admin/`. A production version would replace keys with university login.
 
 - **Backend:** Python, Django 5, Django REST Framework, SQLite locally (Postgres via `DATABASE_URL`)
 - **Frontend:** React (Vite), React Router, Axios, Lucide icons, plain CSS
@@ -134,10 +136,10 @@ All endpoints are public and need no login or CSRF token.
 | `GET /announcements/?category=&search=&date_from=&date_to=&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day. Selling categories: `stock=in` hides out-of-stock posts, `pickup=<name>` filters by pickup place |
 | `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; in selling categories `availability` (`available`/`limited`/`out`) and `pickup_locations` (list, or a JSON string in multipart, max 5); live immediately, rate limited |
 | `GET /announcements/:id/` | |
-| `PATCH /announcements/:id/` | multipart or JSON; `remove_image=true` drops the image; rate limited |
-| `DELETE /announcements/:id/` | moves the post to the Trash; rate limited |
-| `GET /trash/announcements/?search=`, `GET /trash/categories/` | Trash contents with `removed_at` and `purge_at`; also erases expired items |
-| `POST /trash/announcements/:id/restore/`, `POST /trash/categories/:id/restore/` | restore; a post brings its trashed category back too |
+| `PATCH /announcements/:id/` | needs the post's key in `X-Edit-Token` (else 403); multipart or JSON; `remove_image=true` drops the image; rate limited |
+| `DELETE /announcements/:id/` | needs `X-Edit-Token`; moves the post to the Trash; rate limited |
+| `GET /trash/announcements/?ids=1,2&search=`, `GET /trash/categories/` | Trash contents with `removed_at` and `purge_at` (posts: only the ids asked for); also erases expired items |
+| `POST /trash/announcements/:id/restore/`, `POST /trash/categories/:id/restore/` | restore (posts need `X-Edit-Token`); a post brings its trashed category back too |
 | `GET /pickup-locations/?category=` | pickup places used by live posts, most used first |
 | `GET /push/key/` | Web Push public key |
 | `POST /push/subscribe/` | `subscription`, `categories`, `frequency` (`every`/`hourly`/`daily`), `quiet_hours`, `utc_offset_minutes`; creates or updates this device |
@@ -164,7 +166,7 @@ All endpoints are public and need no login or CSRF token.
 
 ## Limitations
 
-- Anyone with the link can edit or delete any post. This is intentional for demos; production should add university login and per-user ownership, plus moderation.
+- Ownership lives in the poster's browser: clearing browser data without saving the private edit link means losing the ability to edit that post. Production should use university login, plus moderation.
 - Rate limits are the only spam control. On serverless hosting the counters are per instance and therefore weak.
 - Notification choices are per browser/device (no accounts). The in-app bell checks every minute while the site is open; phone notifications use Web Push. There are no email alerts, and posts held back by quiet hours or the frequency limit are not delivered later.
 - Images are stored in the database. That is fine for a demo, but a large site should move them to object storage.

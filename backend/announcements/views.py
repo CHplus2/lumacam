@@ -7,7 +7,7 @@ from django.http import Http404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import generics, status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -16,7 +16,7 @@ from rest_framework.permissions import AllowAny
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
-from . import push
+from . import ownership, push
 from .models import Announcement, Category, PickupLocation, PushSubscription
 from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
                           TrashedCategorySerializer)
@@ -173,8 +173,17 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
             return qs.order_by(F(order).asc(nulls_last=True), '-created_at', '-id')
         return qs.order_by(order, '-id')
 
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        # Shown once: the browser stores it to edit or delete this post later.
+        response.data['edit_token'] = self._edit_token
+        response.data['can_edit'] = True
+        return response
+
     def perform_create(self, serializer):
-        announcement = serializer.save(status=Announcement.Status.APPROVED)
+        self._edit_token = ownership.new_token()
+        announcement = serializer.save(status=Announcement.Status.APPROVED,
+                                       edit_token_hash=ownership.hash_token(self._edit_token))
         try:
             push.notify_new_announcement(announcement)
         except Exception:  # notifications must never block posting
@@ -182,13 +191,12 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
 
 
 class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """Anyone can view, edit or delete a post (demo setup with no accounts).
+    """Anyone can view a post; only its poster (edit key in X-Edit-Token) can edit or delete it.
 
-    Delete hides the post (status "removed") rather than erasing it, so it can
-    be restored from /django-admin/.
+    Delete moves the post to the Trash, where its poster can restore it.
     """
     serializer_class = AnnouncementSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [ownership.IsOwnerOrReadOnly]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     throttle_scope = 'modify'
 
@@ -324,8 +332,10 @@ class TrashAnnouncementListView(generics.ListAPIView):
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
+        # Only the posts this browser made (?ids=, from its stored edit keys).
+        ids = [int(i) for i in self.request.query_params.get('ids', '').split(',') if i.strip().isdigit()][:200]
         qs = (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
-              .filter(status=Announcement.Status.REMOVED).order_by('-removed_at', '-id'))
+              .filter(status=Announcement.Status.REMOVED, pk__in=ids).order_by('-removed_at', '-id'))
         return apply_search(qs, self.request.query_params.get('search'))
 
 
@@ -360,6 +370,8 @@ class TrashRestoreView(APIView):
             return Response({'restored': 'category', 'id': cat.id, 'slug': cat.slug, 'name': cat.name})
         ann = get_object_or_404(Announcement.objects.select_related('category'),
                                 pk=pk, status=Announcement.Status.REMOVED)
+        if not ownership.is_owner(ann, ownership.token_from(request)):
+            raise PermissionDenied(ownership.NOT_OWNER if ann.edit_token_hash else ownership.LEGACY)
         restored_category = None
         if ann.category.is_removed:  # a post can't live in a trashed category
             ann.category.is_removed, ann.category.removed_at = False, None

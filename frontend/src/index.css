@@ -239,6 +239,12 @@ label { font-weight: 600; font-size: 0.9rem; }
 .stock-head { justify-content: space-between; }
 .stock-saved { color: #047857; font-weight: 600; }
 .detail-section { display: flex; flex-direction: column; gap: 10px; }
+.owner-box { display: flex; flex-direction: column; gap: 10px; }
+.owner-chip { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #eef0ff; color: var(--primary); }
+.owner-note { display: flex; align-items: center; gap: 6px; }
+.mine-chip { margin-left: 6px; font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: #eef0ff; color: var(--primary); vertical-align: 1px; }
+.edit-link { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.edit-link.compact { align-items: flex-start; }
 
 .pickup-tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .pickup-tag { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: #fff; border: 1px solid var(--border); color: var(--text); font-size: 0.85rem; font-weight: 600; }

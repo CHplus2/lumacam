@@ -126,6 +126,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
     remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
     image_url = serializers.SerializerMethodField()
     pickup_locations = PickupTagsField(required=False)
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Announcement
@@ -133,9 +134,15 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'category', 'category_detail', 'publisher_name',
             'image', 'remove_image', 'image_url', 'contact_method', 'contact_info', 'external_url',
             'created_at', 'updated_at', 'expires_at', 'event_start', 'event_end',
-            'availability', 'stock_updated_at', 'pickup_locations',
+            'availability', 'stock_updated_at', 'pickup_locations', 'can_edit',
         )
         read_only_fields = ('created_at', 'updated_at', 'stock_updated_at')
+
+    def get_can_edit(self, obj):
+        """True when the request carries this post's edit key (never reveals the key)."""
+        from .ownership import is_owner, token_from
+        request = self.context.get('request')
+        return bool(request) and is_owner(obj, token_from(request))
 
     def get_image_url(self, obj):
         return obj.image.url if obj.image else None

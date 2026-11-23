@@ -7,6 +7,8 @@ import { EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { CONTACT_METHODS, emptyCategory, todayISO } from '../utils'
 import { CategoryFields, Field } from '../components/fields'
 import { PickupInput, StockPicker } from '../components/selling'
+import EditLink from '../components/EditLink'
+import { saveToken, tokenFor } from '../ownership'
 import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
 const NEW_CATEGORY = '__new__'
@@ -141,7 +143,7 @@ export default function AnnouncementForm() {
         ? await api.patch(`/announcements/${id}/`, body)
         : await api.post('/announcements/', body)
       if (editing) navigate(`/announcements/${data.id}`, { replace: true })
-      else setSuccess(data)
+      else { saveToken(data.id, data.edit_token); setSuccess(data) }
     } catch (err) {
       const parsed = err.parsed || parseError(err)
       setError(err.parsed ? `New category: ${parsed.message}` : parsed.message)
@@ -153,12 +155,17 @@ export default function AnnouncementForm() {
   if (loading || catLoading) return <Spinner />
   if (notFound) return <EmptyState title="Announcement not found" text="It may have been deleted."
     action={<Link to="/explore" className="btn btn-primary">Browse announcements</Link>} />
+  if (editing && !tokenFor(id)) {
+    return <EmptyState title="You can't edit this post" text="Only the person who posted it can edit it, from the browser they posted with (or with their private edit link)."
+      action={<Link to={`/announcements/${id}`} className="btn btn-primary">Back to the post</Link>} />
+  }
 
   if (success) {
     return (
       <div className="card center-card">
         <h1>Your announcement is live</h1>
-        <p className="muted">Everyone can see it now. You can edit or delete it from its page at any time.</p>
+        <p className="muted">Everyone can see it now. Only you can edit or delete it, from this browser.</p>
+        <EditLink id={success.id} />
         <div className="row">
           <Link to={`/announcements/${success.id}`} className="btn btn-primary">View announcement</Link>
           <button className="btn" onClick={() => {

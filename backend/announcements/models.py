@@ -93,6 +93,8 @@ class Announcement(models.Model):
     availability = models.CharField(max_length=10, choices=Availability.choices, blank=True, default='')
     stock_updated_at = models.DateTimeField(null=True, blank=True)
     pickup_locations = models.ManyToManyField(PickupLocation, blank=True, related_name='announcements')
+    # SHA-256 of the poster's secret edit key (see ownership.py). Empty = only the admin can change it.
+    edit_token_hash = models.CharField(max_length=64, blank=True, default='', editable=False)
 
     class Meta:
         ordering = ['-created_at']

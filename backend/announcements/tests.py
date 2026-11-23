@@ -11,6 +11,12 @@ from rest_framework.test import APIClient, APITestCase
 
 from announcements.models import Announcement, Category, StoredFile
 
+from announcements.ownership import hash_token
+
+# Most tests act as the poster: every new post gets this edit key and the test
+# client sends it. Ownership tests below use other keys explicitly.
+OWNER_TOKEN = 'test-owner-key-0123456789abcdef'
+
 
 def image_file(fmt='PNG', size=(20, 20), name='pic.png', color='red'):
     buf = io.BytesIO()
@@ -24,10 +30,16 @@ class BaseCase(APITestCase):
         self.cat = Category.objects.get(slug='food-drinks')
         self.other_cat = Category.objects.get(slug='events')
         self.client = APIClient()
+        self.client.credentials(HTTP_X_EDIT_TOKEN=OWNER_TOKEN)
+        from unittest import mock
+        patcher = mock.patch('announcements.ownership.new_token', return_value=OWNER_TOKEN)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def make(self, status='approved', **kw):
         data = dict(title='Nasi lemak', description='Delicious lunch pickup', category=self.cat,
-                    publisher_name='Alice', contact_method='whatsapp', contact_info='60123456789', status=status)
+                    publisher_name='Alice', contact_method='whatsapp', contact_info='60123456789', status=status,
+                    edit_token_hash=hash_token(OWNER_TOKEN))
         data.update(kw)
         return Announcement.objects.create(**data)
 
@@ -284,10 +296,11 @@ class LiveFlowTests(LiveServerTestCase):
         cache.clear()
         self.urllib = urllib.request
 
-    def call(self, method, path, body=None):
+    def call(self, method, path, body=None, token=None):
         data = json.dumps(body).encode() if body is not None else None
         req = self.urllib.Request(self.live_server_url + path, data=data, method=method,
-                                  headers={'Content-Type': 'application/json'})
+                                  headers={'Content-Type': 'application/json',
+                                           **({'X-Edit-Token': token} if token else {})})
         try:
             with self.urllib.urlopen(req) as r:
                 raw = r.read()
@@ -304,9 +317,12 @@ class LiveFlowTests(LiveServerTestCase):
         self.assertEqual(status, 201, ann)
         listing = self.call('GET', '/api/announcements/?category=events&search=hack')[1]
         self.assertEqual([a['id'] for a in listing['results']], [ann['id']])
-        status, edited = self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Hack night v2'})
+        self.assertTrue(ann['edit_token'])
+        self.assertEqual(self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Stolen'})[0], 403)
+        status, edited = self.call('PATCH', f"/api/announcements/{ann['id']}/", {'title': 'Hack night v2'}, ann['edit_token'])
         self.assertEqual((status, edited['title']), (200, 'Hack night v2'))
-        self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/")[0], 204)
+        self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/")[0], 403)
+        self.assertEqual(self.call('DELETE', f"/api/announcements/{ann['id']}/", token=ann['edit_token'])[0], 204)
         self.assertEqual(self.call('GET', '/api/announcements/')[1]['count'], 0)
 
 
@@ -411,7 +427,8 @@ class EventDateTests(BaseCase):
 
 class TrashTests(BaseCase):
     def trash_posts(self):
-        return [a['id'] for a in self.client.get('/api/trash/announcements/').data['results']]
+        ids = ','.join(str(i) for i in Announcement.objects.values_list('pk', flat=True))
+        return [a['id'] for a in self.client.get(f'/api/trash/announcements/?ids={ids}').data['results']]
 
     def trash_cats(self):
         return [c['id'] for c in self.client.get('/api/trash/categories/').data]
@@ -422,7 +439,7 @@ class TrashTests(BaseCase):
     def test_deleted_post_goes_to_trash_with_purge_date(self):
         ann = self.make()
         self.client.delete(f'/api/announcements/{ann.id}/')
-        r = self.client.get('/api/trash/announcements/')
+        r = self.client.get(f'/api/trash/announcements/?ids={ann.id}')
         self.assertEqual([a['id'] for a in r.data['results']], [ann.id])
         item = r.data['results'][0]
         self.assertTrue(item['removed_at'] and item['purge_at'])
@@ -511,7 +528,7 @@ class TrashTests(BaseCase):
         a, b = self.make(title='Pizza night'), self.make(title='Book sale')
         for x in (a, b):
             self.client.delete(f'/api/announcements/{x.id}/')
-        r = self.client.get('/api/trash/announcements/?search=pizza')
+        r = self.client.get(f'/api/trash/announcements/?search=pizza&ids={a.id},{b.id}')
         self.assertEqual([x['id'] for x in r.data['results']], [a.id])
 
 
@@ -897,3 +914,82 @@ class PushTests(BaseCase):
         self.assertEqual(r.data, {'subscribed': True, 'categories': ['events'], 'frequency': 'daily',
                                   'quiet_hours': True, 'utc_offset_minutes': 480})
 
+
+
+class OwnershipTests(BaseCase):
+    """Only the browser that posted (it holds the edit key) can change a post."""
+
+    def setUp(self):
+        super().setUp()
+        from unittest import mock
+        mock.patch.stopall()  # use real random keys here
+        self.anon = APIClient()
+
+    def create(self, **kw):
+        r = self.anon.post('/api/announcements/', self.payload(**kw), format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        return r.data
+
+    def as_key(self, key):
+        c = APIClient()
+        if key:
+            c.credentials(HTTP_X_EDIT_TOKEN=key)
+        return c
+
+    def test_create_returns_a_secret_key_once(self):
+        a = self.create()
+        key = a['edit_token']
+        self.assertGreaterEqual(len(key), 30)
+        self.assertTrue(a['can_edit'])
+        stored = Announcement.objects.get(pk=a['id']).edit_token_hash
+        self.assertEqual(stored, hash_token(key))
+        self.assertNotIn(key, stored)
+        public = self.anon.get(f"/api/announcements/{a['id']}/").data
+        self.assertNotIn('edit_token', public)
+        self.assertFalse(public['can_edit'])
+        self.assertTrue(self.as_key(key).get(f"/api/announcements/{a['id']}/").data['can_edit'])
+        self.assertNotEqual(key, self.create()['edit_token'])  # every post gets its own key
+
+    def test_others_cannot_edit_delete_or_change_stock(self):
+        a = self.create(title='Brownies', availability='out')
+        url = f"/api/announcements/{a['id']}/"
+        for client in (self.anon, self.as_key('wrong-key'), self.as_key(self.create()['edit_token'])):
+            r = client.patch(url, {'availability': 'available'}, format='json')
+            self.assertEqual(r.status_code, 403)
+            self.assertIn('Only the person who posted this', r.data['detail'])
+            self.assertEqual(client.patch(url, {'title': 'Hacked'}, format='json').status_code, 403)
+            self.assertEqual(client.delete(url).status_code, 403)
+        a2 = Announcement.objects.get(pk=a['id'])
+        self.assertEqual((a2.title, a2.availability, a2.status), ('Brownies', 'out', 'approved'))
+
+    def test_owner_can_edit_stock_and_delete(self):
+        a = self.create(availability='out')
+        owner = self.as_key(a['edit_token'])
+        url = f"/api/announcements/{a['id']}/"
+        self.assertEqual(owner.patch(url, {'availability': 'available'}, format='json').data['availability'], 'available')
+        self.assertEqual(owner.delete(url).status_code, 204)
+
+    def test_posts_without_a_key_are_admin_only(self):
+        legacy = Announcement.objects.create(title='Old post', description='Made before edit keys.', category=self.cat,
+                                             publisher_name='Priya', status='approved')
+        r = self.as_key('anything').patch(f'/api/announcements/{legacy.id}/', {'title': 'x'}, format='json')
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('site admin', r.data['detail'])
+        self.assertFalse(self.anon.get(f'/api/announcements/{legacy.id}/').data['can_edit'])
+
+    def test_only_owner_can_restore_from_trash(self):
+        a = self.create()
+        owner = self.as_key(a['edit_token'])
+        owner.delete(f"/api/announcements/{a['id']}/")
+        restore = f"/api/trash/announcements/{a['id']}/restore/"
+        self.assertEqual(self.anon.post(restore).status_code, 403)
+        self.assertEqual(self.as_key('wrong').post(restore).status_code, 403)
+        self.assertEqual(owner.post(restore).status_code, 200)
+
+    def test_trash_lists_only_requested_ids(self):
+        mine, theirs = self.create(title='Mine'), self.create(title='Theirs')
+        for p in (mine, theirs):
+            self.as_key(p['edit_token']).delete(f"/api/announcements/{p['id']}/")
+        self.assertEqual(self.anon.get('/api/trash/announcements/').data['count'], 0)
+        r = self.anon.get(f"/api/trash/announcements/?ids={mine['id']},abc")
+        self.assertEqual([x['title'] for x in r.data['results']], ['Mine'])

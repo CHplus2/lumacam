@@ -1,7 +1,10 @@
 import axios from 'axios'
+import { attachEditKey } from './ownership'
 
-// The API has no accounts, so no cookies or CSRF tokens are needed.
+// The API has no accounts, so no cookies or CSRF tokens are needed. Requests about
+// a post this browser uploaded carry that post's edit key (see ownership.js).
 const api = axios.create({ baseURL: '/api' })
+api.interceptors.request.use(attachEditKey)
 
 /** Turn a DRF error response into { message, fields }. */
 export function parseError(err) {
