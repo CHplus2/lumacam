@@ -658,3 +658,240 @@ class CampusTimeZoneTests(BaseCase):
     def test_since_without_timezone_is_accepted(self):
         r = self.client.get('/api/announcements/?since=2026-11-21T08:00:00')
         self.assertEqual(r.status_code, 200)
+
+
+class PushTests(BaseCase):
+    """Phone notifications (Web Push) for followed categories."""
+    FCM = 'https://fcm.googleapis.com/fcm/send/'
+
+    def setUp(self):
+        super().setUp()
+        import base64
+        import os
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        # A real subscriber key pair, as a browser would create.
+        self.sub_key = ec.generate_private_key(ec.SECP256R1())
+        raw = self.sub_key.public_key().public_bytes(serialization.Encoding.X962,
+                                                     serialization.PublicFormat.UncompressedPoint)
+        self.auth_secret = os.urandom(16)
+        b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b'=').decode()  # noqa: E731
+        self.keys = {'p256dh': b64(raw), 'auth': b64(self.auth_secret)}
+
+    def subscribe(self, endpoint=None, categories=('food-drinks',), **settings):
+        # Tests default to no limits so they don't depend on the time of day they run.
+        body = {'subscription': {'endpoint': endpoint or self.FCM + 'device-1', 'keys': self.keys},
+                'categories': list(categories), 'frequency': 'every', 'quiet_hours': False}
+        body.update(settings)
+        return self.client.post('/api/push/subscribe/', body, format='json')
+
+    def test_public_key_is_stable_p256_point(self):
+        import base64
+        a = self.client.get('/api/push/key/').data['public_key']
+        b = self.client.get('/api/push/key/').data['public_key']
+        self.assertEqual(a, b)
+        raw = base64.urlsafe_b64decode(a + '=' * (-len(a) % 4))
+        self.assertEqual((len(raw), raw[0]), (65, 4))
+
+    def test_subscribe_upserts_and_ignores_unknown_categories(self):
+        from announcements.models import PushSubscription
+        r = self.subscribe(categories=['food-drinks', 'nope'])
+        self.assertEqual((r.status_code, r.data['categories']), (201, ['food-drinks']))
+        self.assertEqual((r.data['frequency'], r.data['quiet_hours']), ('every', False))
+        r = self.subscribe(categories=['events', 'marketplace'])
+        self.assertEqual((r.status_code, r.data['categories']), (200, ['events', 'marketplace']))
+        self.assertEqual(PushSubscription.objects.count(), 1)
+
+    def test_only_real_push_services_are_accepted(self):
+        for bad in ('http://fcm.googleapis.com/x', 'https://evil.example/x', 'https://fcm.googleapis.com.evil.example/x',
+                    'https://127.0.0.1/x', 'https://localhost/x', 'not a url'):
+            self.assertEqual(self.subscribe(endpoint=bad).status_code, 400, bad)
+        for good in ('https://web.push.apple.com/abc', 'https://updates.push.services.mozilla.com/wpush/v2/abc',
+                     'https://wns2-par02p.notify.windows.com/w/?token=abc'):
+            self.assertEqual(self.subscribe(endpoint=good).status_code, 201, good)
+
+    def test_bad_keys_and_categories_rejected(self):
+        r = self.client.post('/api/push/subscribe/', {'subscription': {'endpoint': self.FCM + 'x', 'keys': {}}}, format='json')
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post('/api/push/subscribe/', {'subscription': {'endpoint': self.FCM + 'x', 'keys': self.keys},
+                                                      'categories': 'food-drinks'}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_unsubscribe(self):
+        from announcements.models import PushSubscription
+        self.subscribe()
+        r = self.client.post('/api/push/unsubscribe/', {'endpoint': self.FCM + 'device-1'}, format='json')
+        self.assertTrue(r.data['unsubscribed'])
+        self.assertEqual(PushSubscription.objects.count(), 0)
+
+    def test_new_post_notifies_followers_only(self):
+        from unittest import mock
+        self.subscribe(endpoint=self.FCM + 'food-fan', categories=['food-drinks'])
+        self.subscribe(endpoint=self.FCM + 'events-fan', categories=['events'])
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver:
+            r = self.client.post('/api/announcements/', self.payload(title='Kuih lapis today'))
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual([c.args[0]['endpoint'] for c in deliver.call_args_list], [self.FCM + 'food-fan'])
+        payload = json.loads(deliver.call_args.args[1])
+        self.assertEqual(payload['title'], 'New in Food & Drinks')
+        self.assertIn('Kuih lapis today', payload['body'])
+        self.assertEqual(payload['url'], f"/announcements/{r.data['id']}")
+
+    def test_posting_still_works_if_push_breaks(self):
+        from unittest import mock
+        self.subscribe()
+        with mock.patch('announcements.push.notify_new_announcement', side_effect=RuntimeError('boom')):
+            self.assertEqual(self.client.post('/api/announcements/', self.payload()).status_code, 201)
+
+    def test_real_encrypted_push_is_decryptable_and_signed(self):
+        """End to end through pywebpush: encrypt for the subscriber, sign with our VAPID key."""
+        import base64
+        from unittest import mock
+        import http_ece
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+        self.subscribe()
+        resp = mock.Mock(status_code=201, text='', headers={})
+        with mock.patch('requests.post', return_value=resp) as post:
+            r = self.client.post('/api/announcements/', self.payload(title='Brownies at Block C'))
+        self.assertEqual(r.status_code, 201)
+        url = post.call_args.args[0]
+        kw = post.call_args.kwargs
+        self.assertEqual(url, self.FCM + 'device-1')
+        # 1. The phone can decrypt it.
+        plain = http_ece.decrypt(kw['data'], private_key=self.sub_key, auth_secret=self.auth_secret, version='aes128gcm')
+        msg = json.loads(plain)
+        self.assertEqual((msg['title'], msg['url']), ('New in Food & Drinks', f"/announcements/{r.data['id']}"))
+        # 2. The push service can verify it came from us (VAPID JWT for its own origin).
+        auth = kw['headers']['Authorization']
+        token = auth.split('t=')[1].split(',')[0]
+        head, body, sig = token.split('.')
+        pad = lambda s: base64.urlsafe_b64decode(s + '=' * (-len(s) % 4))  # noqa: E731
+        claims = json.loads(pad(body))
+        self.assertEqual(claims['aud'], 'https://fcm.googleapis.com')
+        pub = self.client.get('/api/push/key/').data['public_key']
+        self.assertIn(f'k={pub}', auth)
+        raw_sig = pad(sig)
+        der = encode_dss_signature(int.from_bytes(raw_sig[:32], 'big'), int.from_bytes(raw_sig[32:], 'big'))
+        key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), pad(pub))
+        key.verify(der, f'{head}.{body}'.encode(), ec.ECDSA(hashes.SHA256()))  # raises if invalid
+
+    def test_each_send_is_signed_for_its_own_push_service(self):
+        """pywebpush writes 'aud' into the claims dict; reusing one dict would sign for the wrong service."""
+        import base64
+        from unittest import mock
+        self.subscribe(endpoint=self.FCM + 'a')
+        self.subscribe(endpoint='https://web.push.apple.com/b')
+        resp = mock.Mock(status_code=201, text='', headers={})
+        with mock.patch('requests.post', return_value=resp) as post:
+            self.client.post('/api/announcements/', self.payload())
+        auds = set()
+        for call in post.call_args_list:
+            token = call.kwargs['headers']['Authorization'].split('t=')[1].split(',')[0]
+            body = token.split('.')[1]
+            auds.add(json.loads(base64.urlsafe_b64decode(body + '=' * (-len(body) % 4)))['aud'])
+        self.assertEqual(auds, {'https://fcm.googleapis.com', 'https://web.push.apple.com'})
+
+    def test_expired_subscription_is_removed(self):
+        from unittest import mock
+        from announcements.models import PushSubscription
+        self.subscribe()
+        resp = mock.Mock(status_code=410, text='gone', headers={})
+        with mock.patch('requests.post', return_value=resp):
+            self.client.post('/api/announcements/', self.payload())
+        self.assertEqual(PushSubscription.objects.count(), 0)
+
+    def test_test_notification(self):
+        from unittest import mock
+        self.assertEqual(self.client.post('/api/push/test/', {'endpoint': self.FCM + 'unknown'}, format='json').status_code, 404)
+        self.subscribe()
+        with mock.patch('announcements.push.send', return_value=True):
+            r = self.client.post('/api/push/test/', {'endpoint': self.FCM + 'device-1'}, format='json')
+        self.assertEqual((r.status_code, r.data), (200, {'sent': True}))
+
+    # ---- anti-spam limits ----
+    def sub(self, **kw):
+        from announcements.models import PushSubscription
+        return PushSubscription(endpoint=self.FCM + 'x', p256dh='p', auth='a', **kw)
+
+    def at(self, hhmm, day=21):
+        from datetime import datetime, timezone as tz
+        h, m = map(int, hhmm.split(':'))
+        return datetime(2026, 11, day, h, m, tzinfo=tz.utc)
+
+    def test_defaults_are_conservative(self):
+        from announcements.models import PushSubscription
+        r = self.client.post('/api/push/subscribe/', {
+            'subscription': {'endpoint': self.FCM + 'd', 'keys': self.keys}, 'categories': ['events']}, format='json')
+        self.assertEqual((r.data['frequency'], r.data['quiet_hours']), ('hourly', True))
+        self.assertEqual(PushSubscription.objects.get().frequency, 'hourly')
+
+    def test_invalid_settings_rejected(self):
+        self.assertEqual(self.subscribe(frequency='always').status_code, 400)
+        self.assertEqual(self.subscribe(utc_offset_minutes=99999).status_code, 400)
+        self.assertEqual(self.subscribe(utc_offset_minutes='abc').status_code, 400)
+
+    def test_quiet_hours_use_device_local_time(self):
+        my = self.sub(quiet_hours=True, utc_offset_minutes=480, frequency='every')  # Malaysia, UTC+8
+        self.assertFalse(my.may_notify(self.at('15:00')))   # 23:00 local
+        self.assertFalse(my.may_notify(self.at('22:30')))   # 06:30 local
+        self.assertTrue(my.may_notify(self.at('23:00')))    # 07:00 local
+        self.assertTrue(my.may_notify(self.at('13:59')))    # 21:59 local
+        off = self.sub(quiet_hours=False, utc_offset_minutes=480, frequency='every')
+        self.assertTrue(off.may_notify(self.at('15:00')))
+        from zoneinfo import ZoneInfo
+        kuching = self.at('15:00').astimezone(ZoneInfo('Asia/Kuching'))  # same instant, 23:00 Kuching time
+        self.assertFalse(my.may_notify(kuching))
+        london = self.sub(quiet_hours=True, utc_offset_minutes=0, frequency='every')
+        self.assertTrue(london.may_notify(kuching))  # 15:00 in London
+
+    def test_hourly_and_daily_limits(self):
+        from datetime import timedelta
+        now = self.at('04:00')  # 12:00 in Malaysia
+        hourly = self.sub(frequency='hourly', quiet_hours=False, utc_offset_minutes=480, last_sent_at=now - timedelta(minutes=59))
+        self.assertFalse(hourly.may_notify(now))
+        hourly.last_sent_at = now - timedelta(minutes=61)
+        self.assertTrue(hourly.may_notify(now))
+        # "Once a day" follows the device's calendar day, not UTC's.
+        daily = self.sub(frequency='daily', quiet_hours=False, utc_offset_minutes=480,
+                         last_sent_at=self.at('15:30', day=20))   # 23:30 local yesterday
+        self.assertTrue(daily.may_notify(now))
+        daily.last_sent_at = self.at('16:30', day=20)             # 00:30 local today (still the 20th in UTC)
+        self.assertFalse(daily.may_notify(now))
+        every = self.sub(frequency='every', quiet_hours=False, last_sent_at=now)
+        self.assertTrue(every.may_notify(now))
+
+    def test_second_post_within_the_hour_is_not_pushed(self):
+        from unittest import mock
+        self.subscribe(frequency='hourly')
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver:
+            self.client.post('/api/announcements/', self.payload(title='First post'))
+            self.client.post('/api/announcements/', self.payload(title='Second post'))
+        self.assertEqual(deliver.call_count, 1)
+        self.assertIn('First post', json.loads(deliver.call_args.args[1])['body'])
+
+    def test_test_notification_does_not_use_up_the_limit(self):
+        from unittest import mock
+        self.subscribe(frequency='hourly')
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver:
+            self.client.post('/api/push/test/', {'endpoint': self.FCM + 'device-1'}, format='json')
+            self.client.post('/api/announcements/', self.payload(title='Real post'))
+        self.assertEqual(deliver.call_count, 2)
+
+    def test_notifications_replace_per_category(self):
+        from announcements.push import payload_for
+        a = self.make(title='One')
+        b = self.make(title='Two')
+        c = self.make(title='Three', category=self.other_cat)
+        self.assertEqual(payload_for(a)['tag'], payload_for(b)['tag'])
+        self.assertNotEqual(payload_for(a)['tag'], payload_for(c)['tag'])
+
+    def test_status(self):
+        self.assertEqual(self.client.post('/api/push/status/', {'endpoint': self.FCM + 'nope'}, format='json').data,
+                         {'subscribed': False})
+        self.subscribe(categories=['events'], frequency='daily', quiet_hours=True, utc_offset_minutes=480)
+        r = self.client.post('/api/push/status/', {'endpoint': self.FCM + 'device-1'}, format='json')
+        self.assertEqual(r.data, {'subscribed': True, 'categories': ['events'], 'frequency': 'daily',
+                                  'quiet_hours': True, 'utc_offset_minutes': 480})
+

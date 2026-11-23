@@ -1,8 +1,14 @@
 from django.contrib import admin
 
-from .models import Announcement, Category, PickupLocation
+from .models import Announcement, Category, PickupLocation, PushSubscription
 
 admin.site.register(PickupLocation)
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'frequency', 'quiet_hours', 'last_sent_at', 'created_at')
+    filter_horizontal = ('categories',)
 
 
 

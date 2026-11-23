@@ -147,7 +147,19 @@ label { font-weight: 600; font-size: 0.9rem; }
 .notif-list a { display: flex; flex-direction: column; padding: 8px; margin: 0 -8px; border-radius: 8px; color: inherit; }
 .notif-list a:hover { background: #f3f4f8; text-decoration: none; }
 .notif-title { font-weight: 600; font-size: 0.9rem; }
-.notif-follow { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+.notif-follow { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.notif-settings { max-width: 640px; }
+.notif-settings section { gap: 10px; }
+.notif-cats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.notif-cats .check-card { align-items: center; }
+.notif-cat-icon { flex: none; color: var(--tone-fg, var(--muted)); }
+.check-card.on { border-color: var(--primary); background: #f5f6ff; }
+.check-card input[type="radio"], .check-card input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
+.radio-list { display: flex; flex-direction: column; gap: 8px; }
+.push-card { border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: #fafbff; display: flex; flex-direction: column; gap: 10px; }
+.push-card.is-on { border-color: #34d399; background: #f0fbf4; }
+.push-head { gap: 8px; }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 0.9rem; cursor: pointer; }
 .check input { width: auto; }
 .date-nudge { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 10px; }
@@ -357,6 +369,7 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   .toolbar { flex-direction: column; }
   .toolbar select { width: 100%; }
   .date-filter { margin-top: -8px; }
+  .notif-cats { grid-template-columns: minmax(0, 1fr); }
   .stock-option { flex-direction: column; gap: 2px; font-size: 0.8rem; min-height: 54px; }
   .date-filter .chips { width: 100%; }
   .date-range { width: 100%; }

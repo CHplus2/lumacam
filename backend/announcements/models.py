@@ -118,3 +118,72 @@ class StoredFile(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class PushKeys(models.Model):
+    """The site's Web Push (VAPID) key pair, created automatically on first use.
+
+    Stored in the database so phone notifications work without extra setup on
+    Vercel. VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY environment variables override it.
+    """
+    public_key = models.CharField(max_length=120)
+    private_pem = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = 'push keys'
+
+
+class PushSubscription(models.Model):
+    """One browser or phone that wants notifications for some categories (no account needed).
+
+    Anti-spam limits are enforced here on the server, so a busy category can't
+    flood a phone: `frequency` caps how often this device is notified, and
+    `quiet_hours` holds notifications back overnight in the device's timezone.
+    """
+    class Frequency(models.TextChoices):
+        EVERY = 'every', 'Every new post'
+        HOURLY = 'hourly', 'At most one an hour'
+        DAILY = 'daily', 'At most one a day'
+
+    QUIET_START, QUIET_END = 22, 7  # 10pm to 7am, device local time
+
+    endpoint = models.CharField(max_length=500, unique=True)
+    p256dh = models.CharField(max_length=200)
+    auth = models.CharField(max_length=100)
+    categories = models.ManyToManyField(Category, blank=True, related_name='push_subscriptions')
+    frequency = models.CharField(max_length=10, choices=Frequency.choices, default=Frequency.HOURLY)
+    quiet_hours = models.BooleanField(default=True)
+    # Minutes to add to UTC to get the device's local time (UTC+8 -> 480).
+    utc_offset_minutes = models.SmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return self.endpoint[:60]
+
+    def local_now(self, now):
+        """This device's wall-clock time, whatever the server's TIME_ZONE is."""
+        from datetime import timedelta, timezone as dt_timezone
+        return now.astimezone(dt_timezone.utc) + timedelta(minutes=self.utc_offset_minutes)
+
+    def in_quiet_hours(self, now):
+        hour = self.local_now(now).hour
+        return self.quiet_hours and (hour >= self.QUIET_START or hour < self.QUIET_END)
+
+    def may_notify(self, now):
+        """True if a new-post notification is allowed right now under this device's limits."""
+        from datetime import timedelta
+        if self.in_quiet_hours(now):
+            return False
+        last = self.last_sent_at
+        if last is None or self.frequency == self.Frequency.EVERY:
+            return True
+        if self.frequency == self.Frequency.HOURLY:
+            return now - last >= timedelta(hours=1)
+        return self.local_now(last).date() < self.local_now(now).date()  # DAILY: once per local day
+
+    def as_subscription_info(self):
+        return {'endpoint': self.endpoint, 'keys': {'p256dh': self.p256dh, 'auth': self.auth}}
+

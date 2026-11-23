@@ -1,3 +1,4 @@
+import logging
 from datetime import date, timezone as dt_timezone
 
 from django.db.models import Count, F, Q
@@ -15,7 +16,8 @@ from rest_framework.permissions import AllowAny
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
-from .models import Announcement, Category, PickupLocation
+from . import push
+from .models import Announcement, Category, PickupLocation, PushSubscription
 from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
                           TrashedCategorySerializer)
 from .trash import safe_purge
@@ -172,7 +174,11 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
         return qs.order_by(order, '-id')
 
     def perform_create(self, serializer):
-        serializer.save(status=Announcement.Status.APPROVED)
+        announcement = serializer.save(status=Announcement.Status.APPROVED)
+        try:
+            push.notify_new_announcement(announcement)
+        except Exception:  # notifications must never block posting
+            logging.getLogger(__name__).exception('Sending notifications failed.')
 
 
 class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -217,6 +223,94 @@ class PickupLocationListView(APIView):
                 .order_by('-count', 'name')
                 .values('name', 'count')[:30])
         return Response(list(rows))
+
+
+# ---------------- Phone notifications (Web Push) ----------------
+
+class PushKeyView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({'public_key': push.get_keys()[0]})
+
+
+class PushSubscribeView(APIView):
+    """Create or update this device's subscription and the categories it follows."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'push'
+
+    def post(self, request):
+        sub = request.data.get('subscription') or {}
+        endpoint = str(sub.get('endpoint') or '')
+        keys = sub.get('keys') or {}
+        p256dh, auth = str(keys.get('p256dh') or ''), str(keys.get('auth') or '')
+        if not push.is_allowed_endpoint(endpoint) or len(endpoint) > 500:
+            raise ValidationError({'subscription': 'This browser\'s push service is not supported.'})
+        if not (20 <= len(p256dh) <= 200 and 8 <= len(auth) <= 100):
+            raise ValidationError({'subscription': 'Missing or invalid push keys.'})
+        slugs = request.data.get('categories') or []
+        if not isinstance(slugs, list):
+            raise ValidationError({'categories': 'Send a list of category slugs.'})
+        frequency = str(request.data.get('frequency') or PushSubscription.Frequency.HOURLY)
+        if frequency not in PushSubscription.Frequency.values:
+            raise ValidationError({'frequency': f'Choose one of: {", ".join(PushSubscription.Frequency.values)}.'})
+        try:
+            offset = int(request.data.get('utc_offset_minutes') or 0)
+        except (TypeError, ValueError):
+            raise ValidationError({'utc_offset_minutes': 'Send a whole number of minutes.'})
+        if not -14 * 60 <= offset <= 14 * 60:
+            raise ValidationError({'utc_offset_minutes': 'Out of range.'})
+        categories = Category.objects.filter(slug__in=[str(s) for s in slugs][:50], is_removed=False)
+        obj, created = PushSubscription.objects.update_or_create(
+            endpoint=endpoint, defaults={
+                'p256dh': p256dh, 'auth': auth, 'frequency': frequency,
+                'quiet_hours': request.data.get('quiet_hours', True) not in (False, 'false', '0', 0),
+                'utc_offset_minutes': offset})
+        obj.categories.set(categories)
+        return Response(push_settings(obj), status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+def push_settings(sub):
+    return {'subscribed': True, 'categories': sorted(sub.categories.values_list('slug', flat=True)),
+            'frequency': sub.frequency, 'quiet_hours': sub.quiet_hours,
+            'utc_offset_minutes': sub.utc_offset_minutes}
+
+
+class PushStatusView(APIView):
+    """What the server has for this device (so the app can show the real state)."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        sub = PushSubscription.objects.filter(endpoint=str(request.data.get('endpoint') or '')).first()
+        return Response(push_settings(sub) if sub else {'subscribed': False})
+
+
+class PushUnsubscribeView(APIView):
+    permission_classes = [AllowAny]
+    throttle_scope = 'push'
+
+    def post(self, request):
+        deleted, _ = PushSubscription.objects.filter(endpoint=str(request.data.get('endpoint') or '')).delete()
+        return Response({'unsubscribed': bool(deleted)})
+
+
+class PushTestView(APIView):
+    """Send a test notification to this device only."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'push'
+
+    def post(self, request):
+        sub = get_object_or_404(PushSubscription, endpoint=str(request.data.get('endpoint') or ''))
+        ok = push.send(sub, {
+            'title': 'LumaCam notifications are on',
+            'body': 'You will get a notification like this when someone posts in a category you follow.',
+            'url': '/', 'tag': 'lumacam-test',
+            'icon': '/icons/icon-192.png', 'badge': '/icons/badge-96.png',
+        }, counts_toward_limit=False)
+        if not ok:
+            return Response({'detail': 'Could not reach this device. Try turning notifications off and on again.'},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        return Response({'sent': True})
 
 
 # ---------------- Trash ----------------

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Aperture, Bell, Compass, House, LayoutGrid, Plus, Trash2 } from 'lucide-react'
+import { Aperture, Bell, BellRing, Compass, House, LayoutGrid, Plus, Settings, Trash2 } from 'lucide-react'
 import api from '../api'
-import { useCategories } from '../hooks'
 import { useFollows } from '../follows'
+import { updatePush } from '../push'
 import { fmtDate } from '../utils'
 
 function Logo() {
@@ -20,8 +20,7 @@ const POLL_MS = 60 * 1000
 /** Bell: new posts in the categories you follow since you last marked them seen. */
 function Notifications() {
   const { pathname } = useLocation()
-  const { slugs, lastSeen, isFollowing, toggle, markSeen } = useFollows()
-  const { categories } = useCategories()
+  const { slugs, lastSeen, markSeen, push } = useFollows()
   const [open, setOpen] = useState(false)
   const [result, setNews] = useState({ count: 0, items: [], key: '' })
   const ref = useRef(null)
@@ -60,7 +59,7 @@ function Notifications() {
         <div className="popover notif" role="dialog" aria-label="Notifications">
           <strong>Notifications</strong>
           {slugs.length === 0 ? (
-            <p className="muted small">Follow categories below to hear about new posts in them.</p>
+            <p className="muted small">Pick categories in notification settings to hear about new posts in them.</p>
           ) : news.count === 0 ? (
             <p className="muted small">No new posts in the categories you follow.</p>
           ) : (
@@ -84,19 +83,34 @@ function Notifications() {
             </>
           )}
           <div className="notif-follow">
-            <span className="label small">Categories you follow</span>
-            {categories.map((c) => (
-              <label key={c.id} className="check">
-                <input type="checkbox" checked={isFollowing(c.slug)} onChange={() => toggle(c.slug)} />
-                {c.name}
-              </label>
-            ))}
-            <small className="muted">Saved in this browser.</small>
+            <span className="muted small">
+              Following {slugs.length} {slugs.length === 1 ? 'category' : 'categories'}
+              {' · '}{push.on ? <><BellRing size={12} className="inline" /> Phone notifications on</> : 'Phone notifications off'}
+            </span>
+            <Link to="/notifications" className="btn btn-sm" onClick={() => setOpen(false)}>
+              <Settings size={14} /> Notification settings
+            </Link>
           </div>
         </div>
       )}
     </div>
   )
+}
+
+/** Keeps the server's copy of this device's notification settings in step with the app. */
+function PushSync() {
+  const { slugs, push, setPush } = useFollows()
+  const key = slugs.join(',')
+  useEffect(() => {
+    if (!push.on) return undefined
+    const t = setTimeout(() => {
+      updatePush({ slugs: key ? key.split(',') : [], frequency: push.frequency, quietHours: push.quietHours })
+        .then((ok) => { if (!ok) setPush({ on: false }) })
+        .catch(() => { /* offline or rate limited: try again on the next change */ })
+    }, 600)
+    return () => clearTimeout(t)
+  }, [key, push.on, push.frequency, push.quietHours]) // eslint-disable-line react-hooks/exhaustive-deps
+  return null
 }
 
 export default function Layout() {
@@ -108,6 +122,7 @@ export default function Layout() {
 
   return (
     <div className="app">
+      <PushSync />
       <header className="header">
         <div className="container header-inner">
           <Logo />

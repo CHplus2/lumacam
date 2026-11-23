@@ -166,6 +166,13 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 # Vercel rejects request bodies over 4.5MB; the frontend also downsizes images.
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
+# Web Push (phone notifications). Keys are generated and stored in the database
+# on first use; set both variables to use your own pair instead.
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+PUSH_CONTACT = os.environ.get('PUSH_CONTACT', 'mailto:lumacam-notifications@example.com')
+PUSH_MAX_PER_POST = int(os.environ.get('PUSH_MAX_PER_POST', '500'))
+
 # Deleted posts and categories stay in the Trash this many days before being erased.
 TRASH_DAYS = int(os.environ.get('TRASH_DAYS', '30'))
 
@@ -186,5 +193,6 @@ REST_FRAMEWORK = {
         'announce': os.environ.get('ANNOUNCE_THROTTLE_RATE', '10/hour'),
         'modify': os.environ.get('MODIFY_THROTTLE_RATE', '60/hour'),
         'category': os.environ.get('CATEGORY_THROTTLE_RATE', '10/hour'),
+        'push': os.environ.get('PUSH_THROTTLE_RATE', '60/hour'),
     },
 }

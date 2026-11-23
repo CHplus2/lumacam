@@ -1,18 +1,28 @@
 import { useSyncExternalStore } from 'react'
 
-// "Follow a category" without accounts: the list of followed category slugs and
-// the time you last opened notifications are kept in this browser only.
+// Notification choices without accounts, kept in this browser only:
+// - slugs: categories you follow (used by the in-app bell and phone notifications)
+// - lastSeen: when you last marked the bell's list as seen
+// - push: whether phone notifications are on, and their limits
 const KEY = 'lumacam.follows.v1'
 const EVENT = 'lumacam-follows'
 
-const EMPTY = { slugs: [], lastSeen: null }
+export const FREQUENCIES = [
+  { value: 'every', label: 'Every new post', hint: 'You may get several in a row when a category is busy.' },
+  { value: 'hourly', label: 'At most one an hour', hint: 'Recommended. Busy categories won\'t flood your phone.' },
+  { value: 'daily', label: 'At most one a day', hint: 'The quietest option.' },
+]
+const DEFAULT_PUSH = { on: false, frequency: 'hourly', quietHours: true }
+const EMPTY = { slugs: [], lastSeen: null, push: DEFAULT_PUSH }
 let cache = null
 
 function read() {
   if (cache) return cache
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || 'null')
-    cache = raw && Array.isArray(raw.slugs) ? { slugs: raw.slugs, lastSeen: raw.lastSeen || null } : EMPTY
+    cache = raw && Array.isArray(raw.slugs)
+      ? { slugs: raw.slugs, lastSeen: raw.lastSeen || null, push: { ...DEFAULT_PUSH, ...(raw.push || {}) } }
+      : EMPTY
   } catch {
     cache = EMPTY
   }
@@ -42,8 +52,9 @@ export function useFollows() {
       const slugs = cur.slugs.includes(slug) ? cur.slugs.filter((s) => s !== slug) : [...cur.slugs, slug]
       // Start counting from the moment you first follow something, so you aren't
       // greeted with every old post as "new".
-      write({ slugs, lastSeen: cur.lastSeen || new Date().toISOString() })
+      write({ ...cur, slugs, lastSeen: cur.lastSeen || new Date().toISOString() })
     },
     markSeen: () => write({ ...read(), lastSeen: new Date().toISOString() }),
+    setPush: (patch) => { const cur = read(); write({ ...cur, push: { ...cur.push, ...patch } }) },
   }
 }

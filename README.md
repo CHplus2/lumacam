@@ -46,6 +46,10 @@ All settings have development defaults. For deployments set these environment va
 | `MODIFY_THROTTLE_RATE` | Edits and deletes per IP | `60/hour` |
 | `CATEGORY_THROTTLE_RATE` | New categories per IP | `10/hour` |
 | `TRASH_DAYS` | Days deleted posts and categories stay in the Trash | `30` |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Optional Web Push key pair (else generated and stored in the database) | generated |
+| `PUSH_CONTACT` | Contact sent to push services | `mailto:lumacam-notifications@example.com` |
+| `PUSH_MAX_PER_POST` | Max devices notified per new post | `500` |
+| `PUSH_THROTTLE_RATE` | Subscribe/test requests per IP | `60/hour` |
 | `AUTO_MIGRATE` | Set `0` to stop production instances applying migrations (and the Trash clean-up) on start | on when `DEBUG=false` |
 
 ### Trash
@@ -61,6 +65,22 @@ Items are erased for good `TRASH_DAYS` (default 30) after deletion. A category i
 ### PostgreSQL
 
 Set `DATABASE_URL`. With `DEBUG=false` the server applies pending migrations itself on start (see `config/automigrate.py`); you can also run `python manage.py migrate` manually. The models use only portable field types.
+
+### Phone notifications (Web Push)
+
+Visitors pick categories and turn on phone notifications at **Notifications** (bell, then *Notification settings*, or `/notifications`). No account is needed: the browser's push subscription is stored with the chosen categories. When someone posts in one of those categories, the server sends an encrypted Web Push message (`announcements/push.py`, using `pywebpush`).
+
+Anti-spam limits are enforced on the server for each device:
+
+- **Frequency:** every new post, at most one an hour (default), or at most one a day (by the device's local calendar day).
+- **Quiet hours:** 10pm to 7am device time, on by default.
+- Notifications for the same category replace each other on the phone instead of stacking.
+- Posts held back by a limit are not sent later; they still appear in the in-app bell.
+- Only real browser push services (Google, Apple, Mozilla, Microsoft) are accepted as endpoints; dead subscriptions are removed automatically.
+
+Platforms: Chrome/Edge/Firefox on Android and desktop work directly. On iPhone/iPad (iOS 16.4+), the site must first be added to the Home Screen; the settings page shows the steps.
+
+The VAPID key pair is generated on first use and stored in the database (`PushKeys`), so no setup is needed. To use your own, set `VAPID_PUBLIC_KEY` (base64url) and `VAPID_PRIVATE_KEY` (PEM). Changing keys invalidates existing subscriptions.
 
 ### Selling categories
 
@@ -119,6 +139,9 @@ All endpoints are public and need no login or CSRF token.
 | `GET /trash/announcements/?search=`, `GET /trash/categories/` | Trash contents with `removed_at` and `purge_at`; also erases expired items |
 | `POST /trash/announcements/:id/restore/`, `POST /trash/categories/:id/restore/` | restore; a post brings its trashed category back too |
 | `GET /pickup-locations/?category=` | pickup places used by live posts, most used first |
+| `GET /push/key/` | Web Push public key |
+| `POST /push/subscribe/` | `subscription`, `categories`, `frequency` (`every`/`hourly`/`daily`), `quiet_hours`, `utc_offset_minutes`; creates or updates this device |
+| `POST /push/status/`, `/push/unsubscribe/`, `/push/test/` | by `endpoint`; the test ignores the limits and doesn't count toward them |
 | `GET /media/<path>` | uploaded images |
 
 ## Manual test walkthrough
@@ -137,11 +160,13 @@ All endpoints are public and need no login or CSRF token.
 
 11. Open **Food & Drinks**, open a post and tap **Out of stock** under Stock. The card greys out and shows the badge; **In stock only** on the category page hides it. Tap a pickup place chip (e.g. "Block C lobby") to see everything collected there.
 
+12. On an Android phone (Chrome), open the site, tap the bell, **Notification settings**, tick a category, **Turn on phone notifications**, allow, then **Send a test**. Post in that category from another device: the phone shows "New in …" even with the site closed. On iPhone, add the site to the Home Screen first.
+
 ## Limitations
 
 - Anyone with the link can edit or delete any post. This is intentional for demos; production should add university login and per-user ownership, plus moderation.
 - Rate limits are the only spam control. On serverless hosting the counters are per instance and therefore weak.
-- Notifications are per browser: followed categories and the "last seen" time live in `localStorage`, and the bell checks for new posts every minute while the site is open. There are no push or email alerts.
+- Notification choices are per browser/device (no accounts). The in-app bell checks every minute while the site is open; phone notifications use Web Push. There are no email alerts, and posts held back by quiet hours or the frequency limit are not delivered later.
 - Images are stored in the database. That is fine for a demo, but a large site should move them to object storage.
 - Seeded demo images are generated gradients. Real photographs come from uploads.
 - Search is case-insensitive substring matching (no ranking).

@@ -190,7 +190,7 @@ export default function Listing() {
         {category && (
           <button type="button" className={`btn btn-sm ${following ? '' : 'btn-primary'}`} aria-pressed={following}
             onClick={() => follows.toggle(category.slug)}
-            title={following ? 'Stop notifications for this category' : 'Get notified about new posts here'}>
+            title={following ? 'Stop notifications for this category' : 'Get notified about new posts here. Phone notifications: bell, then Notification settings.'}>
             {following ? <><BellOff size={15} /> Following</> : <><Bell size={15} /> Follow</>}
           </button>
         )}

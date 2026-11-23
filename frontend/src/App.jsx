@@ -7,6 +7,7 @@ import AnnouncementForm from './pages/AnnouncementForm'
 import CategoryForm from './pages/CategoryForm'
 import Categories from './pages/Categories'
 import Trash from './pages/Trash'
+import NotificationSettings from './pages/NotificationSettings'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="create" element={<AnnouncementForm />} />
         <Route path="categories" element={<Categories />} />
         <Route path="trash" element={<Trash />} />
+        <Route path="notifications" element={<NotificationSettings />} />
         <Route path="categories/new" element={<CategoryForm />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
