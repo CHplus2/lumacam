@@ -704,9 +704,11 @@ class PushTests(BaseCase):
 
     def test_only_real_push_services_are_accepted(self):
         for bad in ('http://fcm.googleapis.com/x', 'https://evil.example/x', 'https://fcm.googleapis.com.evil.example/x',
-                    'https://127.0.0.1/x', 'https://localhost/x', 'not a url'):
+                    'https://127.0.0.1/x', 'https://localhost/x', 'not a url', 'https://fcm.googleapis.com:8443/x',
+                    'https://jmt17.google.com.evil.example/x', 'https://sites.google.com/x', 'https://jmtx.google.com/x'):
             self.assertEqual(self.subscribe(endpoint=bad).status_code, 400, bad)
         for good in ('https://web.push.apple.com/abc', 'https://updates.push.services.mozilla.com/wpush/v2/abc',
+                     'https://jmt17.google.com/fcm/send/abc',
                      'https://wns2-par02p.notify.windows.com/w/?token=abc'):
             self.assertEqual(self.subscribe(endpoint=good).status_code, 201, good)
 

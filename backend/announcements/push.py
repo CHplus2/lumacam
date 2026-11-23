@@ -9,6 +9,7 @@ subscription that follows its category.
 import base64
 import json
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
@@ -35,14 +36,20 @@ def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
 
 
+# Chromium builds also hand out Google push endpoints like https://jmt17.google.com/fcm/send/...
+GOOGLE_PUSH_HOST = re.compile(r'^jmt\d+\.google\.com$')
+
+
 def is_allowed_endpoint(url: str) -> bool:
     try:
         parts = urlparse(url)
     except ValueError:
         return False
     host = (parts.hostname or '').lower()
-    if parts.scheme != 'https' or not host:
+    if parts.scheme != 'https' or not host or parts.port not in (None, 443):
         return False
+    if GOOGLE_PUSH_HOST.match(host):
+        return True
     allowed = getattr(settings, 'PUSH_SERVICE_HOSTS', PUSH_SERVICE_HOST_SUFFIXES)
     return any(host == s or host.endswith('.' + s) for s in allowed)
 
