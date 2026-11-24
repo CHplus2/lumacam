@@ -10,6 +10,7 @@ import Categories from './pages/Categories'
 import Trash from './pages/Trash'
 import NotificationSettings from './pages/NotificationSettings'
 import AuthPage from './pages/AuthPage'
+import Welcome from './pages/Welcome'
 
 const auth = (el) => <RequireAuth>{el}</RequireAuth>
 
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="categories" element={<Categories />} />
         <Route path="categories/new" element={auth(<CategoryForm />)} />
         <Route path="trash" element={auth(<Trash />)} />
+        <Route path="welcome" element={auth(<Welcome />)} />
         <Route path="notifications" element={<NotificationSettings />} />
         <Route path="login" element={<AuthPage mode="login" />} />
         <Route path="register" element={<AuthPage mode="register" />} />

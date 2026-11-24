@@ -5,9 +5,7 @@ import { setAuth, useAuth } from '../auth'
 import { claimBrowserPosts } from '../ownership'
 import { Field } from '../components/fields'
 import { ErrorBox } from '../components/ui'
-
-// Only allow going back to a page on this site after logging in.
-const safeNext = (next) => (next && next.startsWith('/') && !next.startsWith('//') ? next : '/')
+import { safeNext } from '../utils'
 
 export default function AuthPage({ mode }) {
   const signup = mode === 'register'
@@ -15,13 +13,15 @@ export default function AuthPage({ mode }) {
   const [params] = useSearchParams()
   const next = safeNext(params.get('next'))
   const { loggedIn } = useAuth()
+  // New accounts pick their interests first, then carry on to where they were going.
+  const target = signup ? `/welcome?next=${encodeURIComponent(next)}` : next
   const [form, setForm] = useState({ username: '', display_name: '', password: '' })
   const [error, setError] = useState('')
   const [fields, setFields] = useState({})
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  if (loggedIn) return <Navigate to={next} replace />
+  if (loggedIn) return <Navigate to={target} replace />
 
   const submit = async (e) => {
     e.preventDefault()
@@ -31,7 +31,7 @@ export default function AuthPage({ mode }) {
       const { data } = await api.post(signup ? '/auth/register/' : '/auth/login/', body)
       setAuth(data.token, data.user)
       try { await claimBrowserPosts(api) } catch { /* not critical */ }
-      navigate(next, { replace: true })
+      navigate(target, { replace: true })
     } catch (err) {
       const p = parseError(err); setError(p.message); setFields(p.fields)
     } finally { setBusy(false) }

@@ -45,6 +45,9 @@ export const STOCK = [
 export const stockLabel = (value) => STOCK.find((s) => s.value === value)?.label || ''
 export const MAX_PICKUPS = 5
 
+// Only allow going back to a page on this site (after logging in or onboarding).
+export const safeNext = (next) => (next && next.startsWith('/') && !next.startsWith('//') ? next : '/')
+
 /** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago". */
 export function fmtAgo(iso) {
   if (!iso) return ''

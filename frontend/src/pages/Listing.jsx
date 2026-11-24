@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { Bell, BellOff, CalendarDays, MapPin, PackageCheck, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
-import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
+import { AnnouncementCard, EmptyState, ErrorBox, LumiTip, Spinner } from '../components/ui'
 import TrashNotice from '../components/TrashNotice'
 import { useFollows } from '../follows'
 import { ICONS, TRASH_DAYS, categoryDeleteBlocker, fmtEventRange, quickRange, todayISO } from '../utils'
@@ -199,6 +199,12 @@ export default function Listing({ mine = false }) {
           </button>
         )}
       </div>
+
+      {category && !following && (
+        <LumiTip id="follow-tip" mood="wink" title="Tap Follow to hear about new posts">
+          Only new posts in {category.name}, nothing else. Change it any time.
+        </LumiTip>
+      )}
 
       {!mine && <div className="chips" role="tablist" aria-label="Categories">
         <Link to={`/explore${keepDates}`} className={`chip ${!slug ? 'active' : ''}`}>All</Link>
