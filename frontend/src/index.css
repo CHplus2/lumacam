@@ -133,12 +133,25 @@ label { font-weight: 600; font-size: 0.9rem; }
 .empty { text-align: center; padding: 48px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
 .empty h3 { color: var(--text); }
 .lumi { display: block; height: auto; margin: 0 auto; }
-.lumi-tip { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: 12px 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
-.lumi-tip .lumi { margin: 0; flex: none; }
-.lumi-tip-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.lumi-tip-body p { margin: 0; font-size: 0.875rem; }
-.welcome { text-align: center; }
-.welcome-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.onboard { position: fixed; inset: 0; z-index: 200; background: var(--surface); display: flex; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
+.onboard-top { display: flex; align-items: center; gap: 12px; max-width: 560px; width: 100%; margin: 0 auto; }
+.onboard-close { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); border-radius: 12px; cursor: pointer; }
+.onboard-progress { flex: 1; height: 12px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.onboard-progress span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 0.3s ease; }
+.onboard-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 24px; max-width: 560px; width: 100%; margin: 0 auto; animation: onboard-in 0.25s ease; }
+.onboard-speech { display: flex; align-items: flex-end; gap: 10px; }
+.onboard-speech .lumi { margin: 0; flex: none; }
+.onboard-bubble { position: relative; flex: 1; min-width: 0; border: 2px solid var(--border); border-radius: 18px; padding: 16px 18px; margin-bottom: 40px; }
+.onboard-bubble::before { content: ""; position: absolute; left: -10px; bottom: 22px; width: 16px; height: 16px; background: var(--surface); border-left: 2px solid var(--border); border-bottom: 2px solid var(--border); transform: rotate(45deg); }
+.onboard-bubble h2 { margin: 0 0 6px; font-size: 1.3rem; line-height: 1.25; }
+.onboard-bubble p { margin: 0; color: var(--muted); line-height: 1.5; }
+.onboard-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.onboard-chip { min-height: 48px; padding: 0 18px; border-radius: 14px; border: 2px solid var(--border); border-bottom-width: 4px; background: var(--surface); font: inherit; font-weight: 600; color: var(--text); cursor: pointer; }
+.onboard-chip.on { border-color: var(--primary); background: #eef0ff; color: #3730a3; }
+.onboard-actions { max-width: 560px; width: 100%; margin: 0 auto; }
+.onboard-next { width: 100%; min-height: 54px; font-size: 1rem; border-radius: 14px; }
+@keyframes onboard-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .onboard-body { animation: none; } .onboard-progress span { transition: none; } }
 .empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
 .page-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .btn-quiet-danger { border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }

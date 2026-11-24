@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CalendarDays, ExternalLink, LoaderCircle, Mail, MapPin, MessageCircle } from 'lucide-react'
 import { StockBadge } from './selling'
@@ -20,31 +19,6 @@ export function Lumi({ mood, size = 120 }) {
       <source srcSet={`/mascot/lumi-${mood}.svg`} media="(prefers-reduced-motion: reduce)" />
       <img className="lumi" src={`/mascot/lumi-${mood}-animated.svg`} alt="" width={size} />
     </picture>
-  )
-}
-
-const TIPS_KEY = 'lumacam.tips.v1'
-const seenTips = () => {
-  try { return JSON.parse(localStorage.getItem(TIPS_KEY) || '[]') } catch { return [] }
-}
-
-/** A one-time hint from Lumi: shown until "Got it", then never again on this device. */
-export function LumiTip({ id, mood = 'curious', title, children }) {
-  const [hidden, setHidden] = useState(() => seenTips().includes(id))
-  if (hidden) return null
-  const dismiss = () => {
-    try { localStorage.setItem(TIPS_KEY, JSON.stringify([...seenTips(), id])) } catch { /* private mode */ }
-    setHidden(true)
-  }
-  return (
-    <aside className="lumi-tip" aria-label="Tip from Lumi">
-      <Lumi mood={mood} size={60} />
-      <div className="lumi-tip-body">
-        <strong>{title}</strong>
-        {children && <p className="muted">{children}</p>}
-      </div>
-      <button type="button" className="btn btn-sm btn-ghost" onClick={dismiss}>Got it</button>
-    </aside>
   )
 }
 

@@ -8,6 +8,7 @@ import { useFollows } from '../follows'
 import { updatePush } from '../push'
 import { clearAuth, useAuth } from '../auth'
 import { fmtDate } from '../utils'
+import Onboarding from './Onboarding'
 
 function Logo() {
   return (
@@ -195,6 +196,7 @@ export default function Layout() {
       </header>
 
       <main className="container main"><Outlet /></main>
+      {pathname === '/' && <Onboarding />}
 
       <footer className="footer container">
         <span>LumaCam - campus announcements, organised.</span>

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, CalendarDays, FolderPlus, Search } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
-import { AnnouncementCard, CategoryCard, EmptyState, ErrorBox, LumiTip, Spinner } from '../components/ui'
+import { AnnouncementCard, CategoryCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { quickRange } from '../utils'
 
 export default function Home() {
@@ -47,10 +47,6 @@ export default function Home() {
           <button className="btn btn-primary" type="submit">Search</button>
         </form>
       </section>
-
-      <LumiTip id="home-intro" title="Hi, I'm Lumi">
-        Food, preloved finds and campus news in one place. Look around, no account needed.
-      </LumiTip>
 
       <section>
         <div className="section-head">

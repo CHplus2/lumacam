@@ -13,15 +13,13 @@ export default function AuthPage({ mode }) {
   const [params] = useSearchParams()
   const next = safeNext(params.get('next'))
   const { loggedIn } = useAuth()
-  // New accounts pick their interests first, then carry on to where they were going.
-  const target = signup ? `/welcome?next=${encodeURIComponent(next)}` : next
   const [form, setForm] = useState({ username: '', display_name: '', password: '' })
   const [error, setError] = useState('')
   const [fields, setFields] = useState({})
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  if (loggedIn) return <Navigate to={target} replace />
+  if (loggedIn) return <Navigate to={next} replace />
 
   const submit = async (e) => {
     e.preventDefault()
@@ -31,7 +29,7 @@ export default function AuthPage({ mode }) {
       const { data } = await api.post(signup ? '/auth/register/' : '/auth/login/', body)
       setAuth(data.token, data.user)
       try { await claimBrowserPosts(api) } catch { /* not critical */ }
-      navigate(target, { replace: true })
+      navigate(next, { replace: true })
     } catch (err) {
       const p = parseError(err); setError(p.message); setFields(p.fields)
     } finally { setBusy(false) }
