@@ -1030,3 +1030,29 @@ class OwnershipTests(BaseCase):
         self.assertEqual(APIClient().post('/api/auth/claim/', {'keys': {}}, format='json').status_code, 401)
 
 
+
+
+class SeedDemoAdminTests(APITestCase):
+    """The repo is public, so seed_demo must never create the admin with a fixed password."""
+
+    def run_seed(self, **env):
+        from unittest import mock
+        from django.core.management import call_command
+        out = io.StringIO()
+        with mock.patch.dict('os.environ', env, clear=False):
+            call_command('seed_demo', '--no-images', stdout=out)
+        return out.getvalue(), User.objects.get(username='admin')
+
+    def test_random_password_is_printed_once_and_works(self):
+        import os
+        os.environ.pop('SEED_ADMIN_PASSWORD', None)
+        out, admin = self.run_seed()
+        self.assertFalse(admin.check_password('Admin12345!'))
+        password = out.split('admin / ', 1)[1].split(' ', 1)[0]
+        self.assertTrue(admin.check_password(password))
+        out2, _ = self.run_seed()  # second run leaves the password alone and doesn't print it
+        self.assertNotIn(password, out2)
+
+    def test_password_from_environment(self):
+        _, admin = self.run_seed(SEED_ADMIN_PASSWORD='Env-pass-2026!')
+        self.assertTrue(admin.check_password('Env-pass-2026!'))

@@ -56,7 +56,7 @@ Items are erased for good `TRASH_DAYS` (default 30) after deletion. A category i
 
 `/django-admin/` can also restore items (Announcements filtered by "In trash", or Categories filtered by "is removed").
 
-`seed_demo` creates the admin account `admin` / `Admin12345!` for this page (change it with `python manage.py changepassword admin`). Nothing on the public site needs a login.
+`seed_demo` creates the admin account `admin` for this page. Its password comes from the `SEED_ADMIN_PASSWORD` environment variable, or is generated at random and printed once; change it any time with `python manage.py changepassword admin`. Browsing the public site needs no login; posting needs an account.
 
 ### PostgreSQL
 
