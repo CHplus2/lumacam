@@ -3,6 +3,8 @@
 Images are generated placeholders; real photos can be uploaded through the app.
 """
 import io
+import os
+import secrets
 from datetime import timedelta
 
 from django.core.files.base import ContentFile
@@ -79,8 +81,13 @@ class Command(BaseCommand):
         admin, created = User.objects.get_or_create(username='admin', defaults={
             'email': 'admin@lumacam.test', 'is_staff': True, 'is_superuser': True})
         if created:
-            admin.set_password('Admin12345!')
+            # Never a fixed password: this repo is public. Use the env var, or a random one shown once.
+            password = os.environ.get('SEED_ADMIN_PASSWORD') or secrets.token_urlsafe(12)
+            admin.set_password(password)
             admin.save()
+            admin_note = f'admin / {password} (shown once; change it with: manage.py changepassword admin)'
+        else:
+            admin_note = 'admin (already existed; password unchanged)'
         if Announcement.objects.exists():
             self.stdout.write('Demo announcements already exist; skipping.')
         else:
@@ -104,4 +111,4 @@ class Command(BaseCommand):
                     ann.save(update_fields=['availability', 'stock_updated_at'])
                     ann.pickup_locations.set([PickupLocation.objects.get_or_create(name=n)[0] for n in places])
         self.stdout.write(self.style.SUCCESS(
-            'Demo data ready. Emergency admin at /django-admin/: admin / Admin12345!'))
+            f'Demo data ready. Emergency admin at /django-admin/: {admin_note}'))
