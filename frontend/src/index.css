@@ -148,10 +148,20 @@ label { font-weight: 600; font-size: 0.9rem; }
 .onboard-chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .onboard-chip { min-height: 48px; padding: 0 18px; border-radius: 14px; border: 2px solid var(--border); border-bottom-width: 4px; background: var(--surface); font: inherit; font-weight: 600; color: var(--text); cursor: pointer; }
 .onboard-chip.on { border-color: var(--primary); background: #eef0ff; color: #3730a3; }
-.onboard-actions { max-width: 560px; width: 100%; margin: 0 auto; }
+.onboard-actions { max-width: 560px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.tour { position: fixed; inset: 0; z-index: 200; }
+.tour-block { position: absolute; inset: 0; }
+.tour-spot { position: fixed; border-radius: 14px; box-shadow: 0 0 0 9999px rgba(15, 17, 26, 0.62); pointer-events: none; transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease; }
+.tour-card { position: fixed; background: var(--surface); border-radius: 16px; padding: 14px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 12px; }
+.tour-say { display: flex; align-items: flex-end; gap: 10px; }
+.tour-say .lumi { margin: 0; flex: none; }
+.tour-text h2 { margin: 0 0 4px; font-size: 1.05rem; line-height: 1.3; }
+.tour-text p { margin: 0; color: var(--muted); font-size: 0.925rem; line-height: 1.45; }
+.tour-actions { display: flex; align-items: center; gap: 8px; }
+.tour-count { flex: 1; font-size: 0.85rem; color: var(--muted); }
 .onboard-next { width: 100%; min-height: 54px; font-size: 1rem; border-radius: 14px; }
 @keyframes onboard-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .onboard-body { animation: none; } .onboard-progress span { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .onboard-body { animation: none; } .onboard-progress span, .tour-spot { transition: none; } }
 .empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
 .page-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .btn-quiet-danger { border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }

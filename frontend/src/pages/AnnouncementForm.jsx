@@ -186,7 +186,7 @@ export default function AnnouncementForm() {
   return (
     <form className="card form" onSubmit={submit} noValidate>
       <h1>{editing ? 'Edit announcement' : 'Create announcement'}</h1>
-      {!editing && <p className="muted">No account needed. Your post appears as soon as you submit it.</p>}
+      {!editing && <p className="muted">Your post appears as soon as you submit it. Only you can edit or delete it.</p>}
       <ErrorBox message={error} />
 
       {!editing && <p className="muted small posting-as">Posting as <strong>{user?.display_name}</strong></p>}

@@ -35,10 +35,10 @@ export default function Home() {
 
   return (
     <>
-      <section className="hero">
+      <section className="hero" data-tour="home">
         <h1>Discover what&apos;s happening around campus.</h1>
         <p>Find food, student businesses, events, research surveys, and opportunities shared by your university community.</p>
-        <form className="search-bar search-hero" onSubmit={submit} role="search">
+        <form className="search-bar search-hero" data-tour="search" onSubmit={submit} role="search">
           <Search size={20} />
           <input
             type="search" value={q} onChange={(e) => setQ(e.target.value)}
@@ -48,7 +48,7 @@ export default function Home() {
         </form>
       </section>
 
-      <section>
+      <section data-tour="categories">
         <div className="section-head">
           <h2>Explore categories</h2>
           <Link to="/categories/new" className="link-more"><FolderPlus size={16} /> Create a category</Link>

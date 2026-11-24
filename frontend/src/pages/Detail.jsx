@@ -84,14 +84,14 @@ export default function Detail() {
         <p className="detail-desc">{a.description}</p>
 
         {a.pickup_locations?.length > 0 && (
-          <div className="detail-section">
+          <div className="detail-section" data-tour="pickup">
             <h3>Pickup</h3>
             <PickupTags places={a.pickup_locations} categorySlug={a.category_detail?.slug} />
           </div>
         )}
 
         {a.category_detail?.sells_items && (
-          <div className="detail-section stock-box">
+          <div className="detail-section stock-box" data-tour="stock">
             <div className="row stock-head">
               <h3>Stock</h3>
               {a.stock_updated_at && <span className="muted small">Updated {fmtAgo(a.stock_updated_at)}</span>}
