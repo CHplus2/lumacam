@@ -16,7 +16,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticate
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
-from . import ownership, push
+from . import ai_fill, ownership, push
 from .models import Announcement, Category, PickupLocation, PushSubscription
 from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
                           TrashedCategorySerializer)
@@ -403,3 +403,32 @@ def serve_media(request, path):
     resp['Cache-Control'] = 'public, max-age=300, s-maxage=300'
     resp['X-Content-Type-Options'] = 'nosniff'
     return resp
+
+
+class AutofillView(APIView):
+    """Paste-to-post. GET: is it switched on? POST {text}: AI-suggested form fields (logged in only).
+
+    Always answers 200 with {ok: false} when the AI can't help, so the form simply stays manual.
+    """
+    throttle_scope = 'ai'
+
+    def get_permissions(self):
+        return [AllowAny()] if self.request.method == 'GET' else [IsAuthenticated()]
+
+    def get_throttles(self):
+        return super().get_throttles() if self.request.method == 'POST' else []
+
+    def get(self, request):
+        return Response({'enabled': ai_fill.enabled()})
+
+    def post(self, request):
+        if not ai_fill.enabled():
+            return Response({'ok': False, 'detail': 'Auto-fill is switched off right now.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        text = str(request.data.get('text') or '').strip()
+        if not text:
+            raise ValidationError({'text': 'Paste your message first.'})
+        categories = dict(Category.objects.filter(is_removed=False, is_approved=True).values_list('slug', 'name'))
+        fields = ai_fill.autofill(text, categories, today=timezone.localdate())
+        if not fields:
+            return Response({'ok': False, 'detail': "Couldn't fill it in automatically. Please fill in the form below."})
+        return Response({'ok': True, 'fields': fields})

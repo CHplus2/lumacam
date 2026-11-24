@@ -182,6 +182,12 @@ STORAGES = {
     'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
 }
 
+# Rate limits are counted in the cache. In production use the database, so every Vercel
+# instance shares the same counts (the default in-memory cache is per instance and resets
+# on each cold start). The table is created at start-up by config/automigrate.py.
+if not DEBUG:
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.db.DatabaseCache', 'LOCATION': 'lumacam_cache'}}
+
 REST_FRAMEWORK = {
     # Log in once per device: the app sends "Authorization: Token <key>". Header tokens
     # (not cookies) keep working through the frontend's /api rewrite without CSRF setup.
@@ -197,5 +203,6 @@ REST_FRAMEWORK = {
         'modify': os.environ.get('MODIFY_THROTTLE_RATE', '60/hour'),
         'category': os.environ.get('CATEGORY_THROTTLE_RATE', '10/hour'),
         'push': os.environ.get('PUSH_THROTTLE_RATE', '60/hour'),
+        'ai': os.environ.get('AI_THROTTLE_RATE', '20/hour'),
     },
 }

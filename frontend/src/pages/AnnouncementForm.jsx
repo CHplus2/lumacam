@@ -7,6 +7,7 @@ import { EmptyState, ErrorBox, Lumi, ShareBar, Spinner } from '../components/ui'
 import { CONTACT_METHODS, emptyCategory, todayISO } from '../utils'
 import { CategoryFields, Field } from '../components/fields'
 import { PickupInput, StockPicker } from '../components/selling'
+import AiPaste from '../components/AiPaste'
 import { useAuth } from '../auth'
 import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 
@@ -43,6 +44,7 @@ export default function AnnouncementForm() {
   const [error, setError] = useState('')
   const [fields, setFields] = useState({})
   const [success, setSuccess] = useState(null)
+  const [aiKeys, setAiKeys] = useState(() => new Set()) // fields Lumi filled, highlighted until posted
 
   // Load the post being edited.
   useEffect(() => {
@@ -77,6 +79,25 @@ export default function AnnouncementForm() {
   }, [file])
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const ai = (k) => (aiKeys.has(k) ? 'ai-filled' : undefined)
+
+  // Apply AI-suggested fields (already validated by the server); returns what was filled, for the note.
+  const applyAi = (f) => {
+    const patch = {}
+    if (f.title) patch.title = f.title
+    if (f.description) patch.description = f.description
+    const cat = f.category && categories.find((c) => c.slug === f.category)
+    if (cat) patch.category = String(cat.id)
+    if (f.event_start) patch.event_start = f.event_start
+    if (f.event_end) patch.event_end = f.event_end
+    if (f.pickup_locations) patch.pickup_locations = f.pickup_locations
+    if (f.contact_method) { patch.contact_method = f.contact_method; patch.contact_info = f.contact_info }
+    setForm((prev) => ({ ...prev, ...patch }))
+    setAiKeys(new Set(Object.keys(patch)))
+    const names = { title: 'title', description: 'description', category: 'category', event_start: 'date', event_end: 'date',
+      pickup_locations: 'pickup places', contact_method: 'contact', contact_info: 'contact' }
+    return [...new Set(Object.keys(patch).map((k) => names[k]))]
+  }
   const method = CONTACT_METHODS.find((m) => m.value === form.contact_method)
 
   const pickFile = async (e) => {
@@ -191,13 +212,14 @@ export default function AnnouncementForm() {
       <ErrorBox message={error} />
 
       {!editing && <p className="muted small posting-as">Posting as <strong>{user?.display_name}</strong></p>}
+      {!editing && <AiPaste onFill={applyAi} />}
 
       <Field label="Title" htmlFor="title" error={fields.title}>
-        <input id="title" value={form.title} onChange={set('title')} maxLength={120} required placeholder="e.g. Homemade nasi lemak, daily pre-order" />
+        <input id="title" className={ai('title')} value={form.title} onChange={set('title')} maxLength={120} required placeholder="e.g. Homemade nasi lemak, daily pre-order" />
       </Field>
 
       <Field label="Category" htmlFor="category" error={fields.category}>
-        <select id="category" value={form.category} onChange={set('category')} required>
+        <select id="category" className={ai('category')} value={form.category} onChange={set('category')} required>
           <option value="" disabled>Select a category</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           <option value={NEW_CATEGORY}>+ Create a new category</option>
@@ -244,7 +266,7 @@ export default function AnnouncementForm() {
       )}
 
       <Field label="Description" htmlFor="description" error={fields.description} hint={`${form.description.length}/3000`}>
-        <textarea id="description" rows={6} value={form.description} onChange={set('description')} maxLength={3000} required
+        <textarea id="description" className={ai('description')} rows={6} value={form.description} onChange={set('description')} maxLength={3000} required
           placeholder="Share the details: what, when, where, price, how to join..." />
       </Field>
 

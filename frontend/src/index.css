@@ -135,6 +135,16 @@ label { font-weight: 600; font-size: 0.9rem; }
 .share-bar { display: flex; flex-wrap: wrap; gap: 8px; }
 .share-bar.big { width: 100%; }
 .share-bar.big .btn { flex: 1 1 160px; min-height: 48px; }
+.ai-paste { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px; background: #f4f3ff; border: 1px solid #dcd9fb; }
+.ai-paste-head { display: flex; align-items: center; gap: 12px; }
+.ai-paste-head .lumi { margin: 0; flex: none; }
+.ai-paste-head p { margin: 2px 0 0; }
+.ai-paste textarea { width: 100%; box-sizing: border-box; background: var(--surface); }
+.ai-paste-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ai-note { margin: 0; }
+.ai-note.ok { color: #166534; }
+.ai-note.err { color: #b42318; }
+.ai-filled { background: #f5f3ff !important; border-color: #a5b4fc !important; }
 .btn-whatsapp { background: #15803d; border-color: #15803d; color: #ffffff; }
 .btn-whatsapp:hover { background: #166534; border-color: #166534; color: #ffffff; text-decoration: none; }
 .lumi { display: block; height: auto; margin: 0 auto; }

@@ -28,6 +28,7 @@ const TOURS = {
     { sel: '.contact-box', mood: 'happy', title: 'Get in touch', text: 'Contact the seller or open the sign-up form from here.' },
   ],
   create: [
+    { sel: '.ai-paste', mood: 'found', title: 'Already posted it on WhatsApp?', text: "Paste the message here and I'll fill in the form. You check it before posting." },
     { sel: '#title', mood: 'curious', title: 'Start with a clear title', text: 'Say what it is, like "Preloved denim jacket, size M".' },
     { sel: '#category', mood: 'found', title: 'Pick a category', text: 'This decides who sees it and who gets notified.' },
     { sel: '#contact_method', mood: 'love', title: 'How should people reach you?', text: 'WhatsApp is quickest for most students.' },

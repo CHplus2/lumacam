@@ -1094,3 +1094,83 @@ class DeleteAccountTests(BaseCase):
         self.assertFalse(User.objects.filter(username='alice').exists())
         self.assertEqual(list(Announcement.objects.values_list('id', flat=True)), [theirs.id])
         self.assertFalse(StoredFile.objects.filter(name=stored).exists())
+
+
+class AiAutofillTests(BaseCase):
+    """Paste-to-post with DeepSeek mocked out: the AI only ever suggests clean, known fields."""
+    CATS = {'food-drinks': 'Food & Drinks', 'marketplace': 'Student Marketplace'}
+
+    def test_clean_keeps_only_valid_fields(self):
+        from announcements.ai_fill import _clean
+        out = _clean({
+            'title': '  Nasi lemak  ', 'category': 'food-drinks', 'event_start': '2026-11-28',
+            'event_end': '2026-11-27', 'pickup_locations': ['Block C lobby', 'x', 3],
+            'contact_method': 'whatsapp', 'contact_info': '+60 12-345 6789', 'price': 'RM6', 'hack': '<b>',
+        }, self.CATS)
+        self.assertEqual(out, {'title': 'Nasi lemak', 'category': 'food-drinks', 'event_start': '2026-11-28',
+                               'pickup_locations': ['Block C lobby'], 'contact_method': 'whatsapp',
+                               'contact_info': '60123456789'})
+
+    def test_clean_rejects_unknown_category_bad_date_and_bad_contact(self):
+        from announcements.ai_fill import _clean
+        out = _clean({'title': 'Talk', 'category': 'nope', 'event_start': 'Friday',
+                      'contact_method': 'email', 'contact_info': 'not-an-email'}, self.CATS)
+        self.assertEqual(out, {'title': 'Talk'})
+        self.assertIsNone(_clean([1, 2], self.CATS))
+        self.assertIsNone(_clean({}, self.CATS))
+
+    def run_autofill(self, reply=None, error=None, key='test-key'):
+        import os
+        from unittest import mock
+        from announcements import ai_fill
+        def fake_call(system, user, timeout):
+            if error:
+                raise error
+            return reply, {'prompt_tokens': 10, 'completion_tokens': 5}
+        with mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': key} if key else {}, clear=False), \
+                mock.patch.object(ai_fill, '_call', side_effect=fake_call):
+            if not key:
+                os.environ.pop('DEEPSEEK_API_KEY', None)
+            return ai_fill.autofill('Nasi lemak RM6, Block C lobby, WhatsApp 0123456789', self.CATS)
+
+    def test_autofill_good_blank_timeout_and_off(self):
+        good = self.run_autofill(reply='{"title": "Nasi lemak", "category": "food-drinks"}')
+        self.assertEqual(good, {'title': 'Nasi lemak', 'category': 'food-drinks'})
+        self.assertIsNone(self.run_autofill(reply='   '))           # DeepSeek's known blank-JSON reply
+        self.assertIsNone(self.run_autofill(error=TimeoutError()))  # slow or busy
+        self.assertIsNone(self.run_autofill(reply='{"title": "x"}', key=''))  # no key = switched off
+
+    def test_endpoint(self):
+        import os
+        from unittest import mock
+        from announcements import ai_fill
+        with mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'test-key'}):
+            self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': True})
+            self.assertEqual(APIClient().post('/api/ai/autofill/', {'text': 'hi'}, format='json').status_code, 401)
+            self.assertEqual(self.client.post('/api/ai/autofill/', {'text': '  '}, format='json').status_code, 400)
+            with mock.patch.object(ai_fill, 'autofill', return_value={'title': 'Nasi lemak'}) as fake:
+                r = self.client.post('/api/ai/autofill/', {'text': 'Nasi lemak RM6'}, format='json')
+            self.assertEqual(r.data, {'ok': True, 'fields': {'title': 'Nasi lemak'}})
+            self.assertIn('food-drinks', fake.call_args.args[1])  # real categories are passed in
+            with mock.patch.object(ai_fill, 'autofill', return_value=None):
+                self.assertFalse(self.client.post('/api/ai/autofill/', {'text': 'x'}, format='json').data['ok'])
+        os.environ.pop('DEEPSEEK_API_KEY', None)
+        self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': False})
+        self.assertEqual(self.client.post('/api/ai/autofill/', {'text': 'x'}, format='json').status_code, 503)
+
+
+class AiRetryTests(BaseCase):
+    def test_retries_once_after_a_failed_try(self):
+        import os
+        from unittest import mock
+        from announcements import ai_fill
+        replies = iter([TimeoutError(), ('{"title": "Lost umbrella"}', {})])
+        def fake_call(system, user, timeout):
+            r = next(replies)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        with mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'test-key'}), mock.patch.object(ai_fill, '_call', side_effect=fake_call) as call:
+            out = ai_fill.autofill('Lost black umbrella', {'other': 'Other'})
+        self.assertEqual(out, {'title': 'Lost umbrella'})
+        self.assertEqual(call.call_count, 2)

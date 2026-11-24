@@ -13,9 +13,15 @@ logger = logging.getLogger(__name__)
 
 def run():
     from django.conf import settings
-    if settings.DEBUG or os.environ.get('AUTO_MIGRATE', '1').lower() in ('0', 'false', 'no'):
+    if settings.DEBUG:
         return
     from django.core.management import call_command
+    try:
+        call_command('createcachetable', verbosity=0)  # rate-limit counts live here (idempotent)
+    except Exception:
+        logger.exception('Could not create the cache table.')
+    if os.environ.get('AUTO_MIGRATE', '1').lower() in ('0', 'false', 'no'):
+        return
     try:
         call_command('migrate', interactive=False, verbosity=0)
     except Exception:  # e.g. another instance migrating at the same moment
