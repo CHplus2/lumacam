@@ -85,11 +85,15 @@ function Tour({ steps: all, onDone }) {
   const pad = 6
   const vw = window.innerWidth
   const vh = window.innerHeight
-  const width = Math.min(360, vw - 32)
+  const width = Math.min(380, vw - 32)
+  const room = 250 // card height plus breathing space
   const card = { width, left: rect ? Math.min(Math.max(16, rect.left + rect.width / 2 - width / 2), vw - width - 16) : 16 }
-  if (rect && vh - rect.bottom > 230) card.top = rect.bottom + pad + 12
-  else if (rect && rect.top > 230) card.bottom = vh - rect.top + pad + 12
+  // Put the card on whichever side of the target has room, with its tail pointing at the target.
+  let place = 'floating'
+  if (rect && vh - rect.bottom > room) { card.top = rect.bottom + pad + 16; place = 'below' }
+  else if (rect && rect.top > room) { card.bottom = vh - rect.top + pad + 16; place = 'above' }
   else card.bottom = 16
+  const tailX = rect ? Math.min(Math.max(28, rect.left + rect.width / 2 - card.left), width - 28) : 0
 
   return (
     <div className="tour" role="dialog" aria-modal="true" aria-labelledby="tour-title">
@@ -97,16 +101,18 @@ function Tour({ steps: all, onDone }) {
       {rect && (
         <div className="tour-spot" style={{ top: rect.top - pad, left: rect.left - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }} />
       )}
-      <div className="tour-card" style={card}>
+      <div className={`tour-card ${place}`} style={{ ...card, '--tail-x': `${tailX}px` }} key={i}>
         <div className="tour-say">
-          <Lumi mood={step.mood} size={96} />
+          <Lumi mood={step.mood} size={104} />
           <div className="tour-text">
             <h2 id="tour-title">{step.title}</h2>
             <p>{step.text}</p>
           </div>
         </div>
         <div className="tour-actions">
-          <span className="tour-count">{i + 1} of {steps.length}</span>
+          <span className="tour-dots" aria-label={`Step ${i + 1} of ${steps.length}`}>
+            {steps.map((t, k) => <span key={t.sel} className={k === i ? 'on' : ''} />)}
+          </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onDone}>Skip</button>
           <button ref={nextBtn} type="button" className="btn btn-primary btn-sm" onClick={last ? onDone : () => setI(i + 1)}>
             {last ? 'Got it' : 'Next'}
