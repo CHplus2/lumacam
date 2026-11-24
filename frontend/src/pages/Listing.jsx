@@ -187,12 +187,12 @@ export default function Listing({ mine = false }) {
           <h1>{category ? category.name : mine ? 'My posts' : 'Explore all announcements'}</h1>
           <p className="muted">
             {category ? category.description : mine
-              ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash">Trash</Link>.</>
+              ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash" data-tour="trash">Trash</Link>.</>
               : 'Browse everything shared by your campus community.'}
           </p>
         </div>
         {category && (
-          <button type="button" className={`btn btn-sm ${following ? '' : 'btn-primary'}`} aria-pressed={following}
+          <button type="button" data-tour="follow" className={`btn btn-sm ${following ? '' : 'btn-primary'}`} aria-pressed={following}
             onClick={() => follows.toggle(category.slug)}
             title={following ? 'Stop notifications for this category' : 'Get notified about new posts here. Phone notifications: bell, then Notification settings.'}>
             {following ? <><BellOff size={15} /> Following</> : <><Bell size={15} /> Follow</>}
@@ -207,7 +207,7 @@ export default function Listing({ mine = false }) {
         ))}
       </div>}
 
-      <div className="toolbar">
+      <div className="toolbar" data-tour="filters">
         <div className="search-bar">
           <Search size={18} />
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)}

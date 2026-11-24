@@ -8,6 +8,8 @@ import { useFollows } from '../follows'
 import { updatePush } from '../push'
 import { clearAuth, useAuth } from '../auth'
 import { fmtDate } from '../utils'
+import Onboarding, { PageTour } from './Onboarding'
+import { replayGuide } from '../guide'
 
 function Logo() {
   return (
@@ -54,7 +56,7 @@ function Notifications() {
   const label = news.count ? `Notifications, ${news.count} new` : 'Notifications'
   return (
     <div className="popover-wrap" ref={ref}>
-      <button className="icon-btn bell" aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button className="icon-btn bell" data-tour="bell" aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)}>
         <Bell size={20} />
         {news.count > 0 && <span className="bell-count" aria-hidden="true">{news.count > 9 ? '9+' : news.count}</span>}
       </button>
@@ -143,6 +145,7 @@ function AccountMenu() {
           <button type="button" role="menuitem" className="menu-item" onClick={() => go('/my-posts')}><FileText size={16} /> My posts</button>
           <button type="button" role="menuitem" className="menu-item" onClick={() => go('/trash')}><Trash2 size={16} /> Trash</button>
           <button type="button" role="menuitem" className="menu-item" onClick={() => go('/notifications')}><Settings size={16} /> Notification settings</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={replayGuide}><Compass size={16} /> Replay the guide</button>
           <button type="button" role="menuitem" className="menu-item" onClick={() => logOut(false)}><LogOut size={16} /> Log out</button>
           <button type="button" role="menuitem" className="menu-item small muted" onClick={() => logOut(true)}>Log out on all devices</button>
         </div>
@@ -170,6 +173,12 @@ function PushSync() {
 export default function Layout() {
   const { pathname } = useLocation()
   const { loggedIn } = useAuth()
+  // Each main screen has its own short Lumi tour (see Onboarding.jsx).
+  const tourId = pathname.startsWith('/category/') || pathname === '/explore' ? 'listing'
+    : pathname === '/my-posts' ? 'myposts'
+      : /^\/announcements\/\d+$/.test(pathname) ? 'detail'
+        : pathname === '/create' ? 'create'
+          : pathname === '/notifications' ? 'notify' : null
 
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
 
@@ -184,17 +193,19 @@ export default function Layout() {
           <nav className="nav-desktop" aria-label="Main">
             <NavLink to="/" end className={link}>Home</NavLink>
             <NavLink to="/categories" className={link}>Categories</NavLink>
-            <NavLink to="/explore" className={link}>Explore</NavLink>
+            <NavLink to="/explore" className={link} data-tour="explore">Explore</NavLink>
           </nav>
           <div className="header-actions">
             <Notifications />
-            <Link to="/create" className="btn btn-primary btn-sm header-create"><Plus size={16} /> Create Announcement</Link>
+            <Link to="/create" className="btn btn-primary btn-sm header-create" data-tour="post"><Plus size={16} /> Create Announcement</Link>
             <AccountMenu />
           </div>
         </div>
       </header>
 
       <main className="container main"><Outlet /></main>
+      {pathname === '/' && <Onboarding />}
+      {tourId && <PageTour key={pathname} id={tourId} />}
 
       <footer className="footer container">
         <span>LumaCam - campus announcements, organised.</span>
@@ -203,8 +214,8 @@ export default function Layout() {
       <nav className="nav-mobile" aria-label="Mobile">
         <NavLink to="/" end className={link}><House size={22} /><span>Home</span></NavLink>
         <NavLink to="/categories" className={link}><LayoutGrid size={22} /><span>Categories</span></NavLink>
-        <NavLink to="/create" className="nav-create" aria-label="Create announcement"><Plus size={28} strokeWidth={2.6} /></NavLink>
-        <NavLink to="/explore" className={link}><Compass size={22} /><span>Explore</span></NavLink>
+        <NavLink to="/create" className="nav-create" data-tour="post" aria-label="Create announcement"><Plus size={28} strokeWidth={2.6} /></NavLink>
+        <NavLink to="/explore" className={link} data-tour="explore"><Compass size={22} /><span>Explore</span></NavLink>
         {loggedIn
           ? <NavLink to="/my-posts" className={link}><FileText size={22} /><span>My posts</span></NavLink>
           : <NavLink to="/login" className={link}><LogIn size={22} /><span>Log in</span></NavLink>}

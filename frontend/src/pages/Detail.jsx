@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Calendar, ExternalLink, Lock, Mail, MessageCircle, Pencil, Trash2, UserCheck } from 'lucide-react'
 import api, { parseError } from '../api'
-import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Spinner } from '../components/ui'
+import { CategoryBadge, EmptyState, ErrorBox, EventBadge, ShareBar, Spinner } from '../components/ui'
 import { PickupTags, StockBadge, StockPicker } from '../components/selling'
 import { useAuth } from '../auth'
 import { contactLink, fmtAgo, fmtDate, fmtDay, safeUrl, stockLabel, TRASH_DAYS } from '../utils'
@@ -29,7 +29,7 @@ export default function Detail() {
   }, [id])
 
   if (loading) return <Spinner />
-  if (notFound) return <EmptyState title="Announcement not found" text="It may have been deleted."
+  if (notFound) return <EmptyState mood="sad" title="Announcement not found" text="It may have been deleted."
     action={<Link to="/explore" className="btn btn-primary">Browse announcements</Link>} />
   if (error) return <ErrorBox message={error} />
 
@@ -81,17 +81,18 @@ export default function Detail() {
           Posted by <strong>{a.publisher_name}</strong> on {fmtDate(a.created_at)}
           {a.expires_at && <> · <Calendar size={14} className="inline" /> Expires {fmtDay(a.expires_at)}</>}
         </p>
+        <ShareBar a={a} />
         <p className="detail-desc">{a.description}</p>
 
         {a.pickup_locations?.length > 0 && (
-          <div className="detail-section">
+          <div className="detail-section" data-tour="pickup">
             <h3>Pickup</h3>
             <PickupTags places={a.pickup_locations} categorySlug={a.category_detail?.slug} />
           </div>
         )}
 
         {a.category_detail?.sells_items && (
-          <div className="detail-section stock-box">
+          <div className="detail-section stock-box" data-tour="stock">
             <div className="row stock-head">
               <h3>Stock</h3>
               {a.stock_updated_at && <span className="muted small">Updated {fmtAgo(a.stock_updated_at)}</span>}

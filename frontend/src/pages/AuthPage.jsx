@@ -5,9 +5,7 @@ import { setAuth, useAuth } from '../auth'
 import { claimBrowserPosts } from '../ownership'
 import { Field } from '../components/fields'
 import { ErrorBox } from '../components/ui'
-
-// Only allow going back to a page on this site after logging in.
-const safeNext = (next) => (next && next.startsWith('/') && !next.startsWith('//') ? next : '/')
+import { safeNext } from '../utils'
 
 export default function AuthPage({ mode }) {
   const signup = mode === 'register'

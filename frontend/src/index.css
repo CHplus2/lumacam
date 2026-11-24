@@ -132,6 +132,64 @@ label { font-weight: 600; font-size: 0.9rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty { text-align: center; padding: 48px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
 .empty h3 { color: var(--text); }
+.share-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-bar.big { width: 100%; }
+.share-bar.big .btn { flex: 1 1 160px; min-height: 48px; }
+.btn-whatsapp { background: #15803d; border-color: #15803d; color: #ffffff; }
+.btn-whatsapp:hover { background: #166534; border-color: #166534; color: #ffffff; text-decoration: none; }
+.lumi { display: block; height: auto; margin: 0 auto; }
+.onboard { position: fixed; inset: 0; z-index: 200; background: var(--surface); display: flex; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
+.onboard-top { display: flex; align-items: center; gap: 12px; max-width: 560px; width: 100%; margin: 0 auto; }
+.onboard-close { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); border-radius: 12px; cursor: pointer; }
+.onboard-progress { flex: 1; height: 12px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.onboard-progress span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 0.3s ease; }
+.onboard-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 20px; max-width: 560px; width: 100%; margin: 0 auto; animation: onboard-in 0.25s ease; }
+.onboard-body.is-say { justify-content: center; }
+.onboard-body.is-ask { justify-content: flex-start; padding-top: 18px; overflow-y: auto; }
+/* Statement: bubble above a big centred Lumi, tail pointing down at him. */
+.is-say .onboard-speech { display: flex; flex-direction: column-reverse; align-items: center; gap: 18px; }
+.is-say .onboard-bubble { text-align: center; }
+.is-say .onboard-bubble::before { bottom: -10px; left: calc(50% - 8px); border-right: 2px solid var(--border); border-bottom: 2px solid var(--border); }
+/* Question: Lumi top-left, bubble to his right, tail pointing left. */
+.is-ask .onboard-speech { display: flex; align-items: center; gap: 12px; }
+.is-ask .onboard-bubble { flex: 1; min-width: 0; }
+.is-ask .onboard-bubble::before { left: -10px; top: calc(50% - 8px); border-left: 2px solid var(--border); border-bottom: 2px solid var(--border); }
+.onboard-speech .lumi { margin: 0; flex: none; }
+.onboard-bubble { position: relative; border: 2px solid var(--border); border-radius: 18px; padding: 14px 18px; background: var(--surface); }
+.onboard-bubble::before { content: ""; position: absolute; width: 16px; height: 16px; background: var(--surface); transform: rotate(45deg); }
+.onboard-bubble h2 { margin: 0 0 6px; font-size: 1.3rem; line-height: 1.25; }
+.is-ask .onboard-bubble h2 { font-size: 1.1rem; }
+.onboard-bubble p { margin: 0; color: var(--muted); line-height: 1.5; }
+.onboard-options { display: flex; flex-direction: column; gap: 10px; }
+.onboard-option { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 14px; border-radius: 14px; border: 2px solid var(--border); border-bottom-width: 4px; background: var(--surface); font: inherit; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; }
+.onboard-option.on { border-color: var(--primary); background: #eef0ff; color: #3730a3; }
+.onboard-option-icon { width: 36px; height: 36px; flex: none; border-radius: 10px; display: grid; place-items: center; background: var(--tone-bg, #eef0ff); color: var(--tone-fg, var(--primary)); }
+.onboard-option-name { flex: 1; min-width: 0; }
+.onboard-check { width: 24px; height: 24px; flex: none; border-radius: 7px; border: 2px solid var(--border); display: grid; place-items: center; color: #ffffff; }
+.onboard-option.on .onboard-check { background: var(--primary); border-color: var(--primary); }
+.onboard-actions { max-width: 560px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.tour { position: fixed; inset: 0; z-index: 200; }
+.tour-block { position: absolute; inset: 0; }
+.tour-spot { position: fixed; border-radius: 14px; box-shadow: 0 0 0 3px #818cf8, 0 0 0 9px rgba(129, 140, 248, 0.35), 0 0 0 9999px rgba(15, 17, 26, 0.64); pointer-events: none; transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease; }
+.tour-card { position: fixed; background: var(--surface); border-radius: 18px; padding: 16px; box-shadow: 0 18px 40px rgba(15, 17, 26, 0.28); display: flex; flex-direction: column; gap: 14px; animation: tour-in 0.22s ease; }
+.tour-card::after { content: ""; position: absolute; left: calc(var(--tail-x) - 10px); width: 20px; height: 20px; background: var(--surface); transform: rotate(45deg); border-radius: 3px; }
+.tour-card.below::after { top: -9px; }
+.tour-card.above::after { bottom: -9px; }
+.tour-card.floating::after { display: none; }
+.tour-say { display: flex; align-items: center; gap: 14px; }
+.tour-say .lumi { margin: -6px 0 -6px -4px; flex: none; }
+.tour-text { min-width: 0; }
+.tour-text h2 { margin: 0 0 6px; font-size: 1.15rem; line-height: 1.25; }
+.tour-text p { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
+.tour-actions { display: flex; align-items: center; gap: 8px; }
+.tour-dots { flex: 1; display: flex; gap: 6px; align-items: center; }
+.tour-dots span { width: 8px; height: 8px; border-radius: 999px; background: var(--border); transition: width 0.2s ease, background 0.2s ease; }
+.tour-dots span.on { width: 22px; background: var(--primary); }
+.tour-actions .btn-primary { min-width: 88px; }
+@keyframes tour-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.onboard-next { width: 100%; min-height: 54px; font-size: 1rem; border-radius: 14px; }
+@keyframes onboard-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .onboard-body { animation: none; } .onboard-progress span, .tour-spot, .tour-dots span { transition: none; } .tour-card { animation: none; } }
 .empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
 .page-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .btn-quiet-danger { border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }

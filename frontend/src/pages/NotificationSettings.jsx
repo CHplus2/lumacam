@@ -117,7 +117,7 @@ export default function NotificationSettings() {
           : `Following ${slugs.length} ${slugs.length === 1 ? 'category' : 'categories'}. New posts in them also show in the bell.`}</small>
       </section>
 
-      <section className="field">
+      <section className="field" data-tour="freq">
         <span className="label">2. How often can we notify your phone?</span>
         <div className="radio-list" role="radiogroup" aria-label="Notification frequency">
           {FREQUENCIES.map((f) => (
