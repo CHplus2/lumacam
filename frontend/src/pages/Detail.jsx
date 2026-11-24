@@ -29,7 +29,7 @@ export default function Detail() {
   }, [id])
 
   if (loading) return <Spinner />
-  if (notFound) return <EmptyState title="Announcement not found" text="It may have been deleted."
+  if (notFound) return <EmptyState mood="sad" title="Announcement not found" text="It may have been deleted."
     action={<Link to="/explore" className="btn btn-primary">Browse announcements</Link>} />
   if (error) return <ErrorBox message={error} />
 

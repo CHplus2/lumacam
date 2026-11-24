@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArchiveRestore, Trash2 } from 'lucide-react'
+import { ArchiveRestore } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { ICONS, TRASH_DAYS, fmtRelative, timeLeft } from '../utils'
@@ -95,7 +95,7 @@ export default function Trash() {
       <ErrorBox message={error} onRetry={() => load()} />
 
       {loading && items.length === 0 ? <Spinner /> : !error && items.length === 0 ? (
-        <EmptyState icon={Trash2} title={`No deleted ${tab}`}
+        <EmptyState title={`No deleted ${tab}`}
           text={`Anything you delete shows up here for ${TRASH_DAYS} days.`} />
       ) : (
         <>

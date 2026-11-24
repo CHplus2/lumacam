@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { CalendarDays, ExternalLink, Inbox, LoaderCircle, Mail, MapPin, MessageCircle } from 'lucide-react'
+import { CalendarDays, ExternalLink, LoaderCircle, Mail, MapPin, MessageCircle } from 'lucide-react'
 import { StockBadge } from './selling'
 import { ICONS, contactLink, fmtDate, fmtEventRange, parseISODate } from '../utils'
 
@@ -12,10 +12,20 @@ export function Spinner({ label = 'Loading...' }) {
   )
 }
 
-export function EmptyState({ title, text, action, icon: Icon = Inbox }) {
+/** Lumi the mascot (public/mascot/). Animated, or still when the device asks for reduced motion. */
+export function Lumi({ mood, size = 120 }) {
+  return (
+    <picture>
+      <source srcSet={`/mascot/lumi-${mood}.svg`} media="(prefers-reduced-motion: reduce)" />
+      <img className="lumi" src={`/mascot/lumi-${mood}-animated.svg`} alt="" width={size} />
+    </picture>
+  )
+}
+
+export function EmptyState({ title, text, action, mood = 'sleepy' }) {
   return (
     <div className="empty">
-      <Icon size={36} />
+      <Lumi mood={mood} size={110} />
       <h3>{title}</h3>
       {text && <p className="muted">{text}</p>}
       {action}

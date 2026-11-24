@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ImagePlus, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
-import { EmptyState, ErrorBox, Spinner } from '../components/ui'
+import { EmptyState, ErrorBox, Lumi, Spinner } from '../components/ui'
 import { CONTACT_METHODS, emptyCategory, todayISO } from '../utils'
 import { CategoryFields, Field } from '../components/fields'
 import { PickupInput, StockPicker } from '../components/selling'
@@ -155,16 +155,17 @@ export default function AnnouncementForm() {
   }
 
   if (loading || catLoading) return <Spinner />
-  if (notFound) return <EmptyState title="Announcement not found" text="It may have been deleted."
+  if (notFound) return <EmptyState mood="sad" title="Announcement not found" text="It may have been deleted."
     action={<Link to="/explore" className="btn btn-primary">Browse announcements</Link>} />
   if (editing && !canEdit) {
-    return <EmptyState title="You can't edit this post" text="Only the account that posted it can edit it."
+    return <EmptyState mood="sad" title="You can't edit this post" text="Only the account that posted it can edit it."
       action={<Link to={`/announcements/${id}`} className="btn btn-primary">Back to the post</Link>} />
   }
 
   if (success) {
     return (
       <div className="card center-card">
+        <Lumi mood="happy" size={140} />
         <h1>Your announcement is live</h1>
         <p className="muted">Everyone can see it now. Only you can edit or delete it: find it any time under My posts.</p>
         <div className="row">

@@ -132,6 +132,7 @@ label { font-weight: 600; font-size: 0.9rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty { text-align: center; padding: 48px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
 .empty h3 { color: var(--text); }
+.lumi { display: block; height: auto; margin: 0 auto; }
 .empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
 .page-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .btn-quiet-danger { border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }
