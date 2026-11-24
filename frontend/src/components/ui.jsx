@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, ExternalLink, LoaderCircle, Mail, MapPin, MessageCircle } from 'lucide-react'
+import { CalendarDays, ExternalLink, Link2, LoaderCircle, Mail, MapPin, MessageCircle } from 'lucide-react'
 import { StockBadge } from './selling'
 import { ICONS, contactLink, fmtDate, fmtEventRange, parseISODate } from '../utils'
 
@@ -19,6 +20,32 @@ export function Lumi({ mood, size = 120 }) {
       <source srcSet={`/mascot/lumi-${mood}.svg`} media="(prefers-reduced-motion: reduce)" />
       <img className="lumi" src={`/mascot/lumi-${mood}-animated.svg`} alt="" width={size} />
     </picture>
+  )
+}
+
+/** Share a post where students already are (WhatsApp), with copy-link as the fallback. */
+export function ShareBar({ a, big = false }) {
+  const [copied, setCopied] = useState(false)
+  const url = `${window.location.origin}/announcements/${a.id}`
+  const text = `${a.title}\n${url}`
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      window.prompt('Copy this link:', url) // clipboard blocked (e.g. http or old browser)
+    }
+  }
+  return (
+    <div className={`share-bar ${big ? 'big' : ''}`}>
+      <a className="btn btn-whatsapp" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer">
+        <MessageCircle size={18} /> Share to WhatsApp
+      </a>
+      <button type="button" className="btn" onClick={copy} aria-live="polite">
+        <Link2 size={18} /> {copied ? 'Link copied' : 'Copy link'}
+      </button>
+    </div>
   )
 }
 

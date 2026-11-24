@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Calendar, ExternalLink, Lock, Mail, MessageCircle, Pencil, Trash2, UserCheck } from 'lucide-react'
 import api, { parseError } from '../api'
-import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Spinner } from '../components/ui'
+import { CategoryBadge, EmptyState, ErrorBox, EventBadge, ShareBar, Spinner } from '../components/ui'
 import { PickupTags, StockBadge, StockPicker } from '../components/selling'
 import { useAuth } from '../auth'
 import { contactLink, fmtAgo, fmtDate, fmtDay, safeUrl, stockLabel, TRASH_DAYS } from '../utils'
@@ -81,6 +81,7 @@ export default function Detail() {
           Posted by <strong>{a.publisher_name}</strong> on {fmtDate(a.created_at)}
           {a.expires_at && <> · <Calendar size={14} className="inline" /> Expires {fmtDay(a.expires_at)}</>}
         </p>
+        <ShareBar a={a} />
         <p className="detail-desc">{a.description}</p>
 
         {a.pickup_locations?.length > 0 && (

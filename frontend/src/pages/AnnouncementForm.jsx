@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ImagePlus, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
-import { EmptyState, ErrorBox, Lumi, Spinner } from '../components/ui'
+import { EmptyState, ErrorBox, Lumi, ShareBar, Spinner } from '../components/ui'
 import { CONTACT_METHODS, emptyCategory, todayISO } from '../utils'
 import { CategoryFields, Field } from '../components/fields'
 import { PickupInput, StockPicker } from '../components/selling'
@@ -167,7 +167,8 @@ export default function AnnouncementForm() {
       <div className="card center-card">
         <Lumi mood="happy" size={190} />
         <h1>Your announcement is live</h1>
-        <p className="muted">Everyone can see it now. Only you can edit or delete it: find it any time under My posts.</p>
+        <p className="muted">Everyone can see it now. Share it to your groups so people see it today.</p>
+        <ShareBar a={success} big />
         <div className="row">
           <Link to={`/announcements/${success.id}`} className="btn btn-primary">View announcement</Link>
           <button className="btn" onClick={() => {

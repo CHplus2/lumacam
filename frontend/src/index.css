@@ -132,6 +132,11 @@ label { font-weight: 600; font-size: 0.9rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty { text-align: center; padding: 48px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
 .empty h3 { color: var(--text); }
+.share-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-bar.big { width: 100%; }
+.share-bar.big .btn { flex: 1 1 160px; min-height: 48px; }
+.btn-whatsapp { background: #15803d; border-color: #15803d; color: #ffffff; }
+.btn-whatsapp:hover { background: #166534; border-color: #166534; color: #ffffff; text-decoration: none; }
 .lumi { display: block; height: auto; margin: 0 auto; }
 .onboard { position: fixed; inset: 0; z-index: 200; background: var(--surface); display: flex; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
 .onboard-top { display: flex; align-items: center; gap: 12px; max-width: 560px; width: 100%; margin: 0 auto; }
