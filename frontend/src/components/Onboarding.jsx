@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { useCategories } from '../hooks'
 import { useFollows } from '../follows'
 import { Lumi } from './ui'
+import { ICONS } from '../utils'
 import { finishWelcome, markTour, tourSeen, welcomeDone } from '../guide'
 
 // One short tour per screen. `sel` is a CSS selector; the first VISIBLE match is used, so the
@@ -98,7 +99,7 @@ function Tour({ steps: all, onDone }) {
       )}
       <div className="tour-card" style={card}>
         <div className="tour-say">
-          <Lumi mood={step.mood} size={64} />
+          <Lumi mood={step.mood} size={96} />
           <div className="tour-text">
             <h2 id="tour-title">{step.title}</h2>
             <p>{step.text}</p>
@@ -179,21 +180,28 @@ export default function Onboarding() {
         <div className="onboard-progress" aria-hidden="true"><span style={{ width: `${((step + 1) / steps.length) * 100}%` }} /></div>
       </div>
 
-      <div className="onboard-body" key={step}>
+      {/* Duolingo-style layouts: statements = big centred Lumi with the bubble above him;
+          questions = Lumi top-left, bubble to his right, full-width answer rows below. */}
+      <div className={`onboard-body ${s.pick ? 'is-ask' : 'is-say'}`} key={step}>
         <div className="onboard-speech">
-          <Lumi mood={s.mood} size={s.pick ? 110 : 150} />
+          <Lumi mood={s.mood} size={s.pick ? 104 : 240} />
           <div className="onboard-bubble">
             <h2 id="onboard-title">{s.title}</h2>
             <p>{s.text}</p>
           </div>
         </div>
         {s.pick && (
-          <div className="onboard-chips">
+          <div className="onboard-options">
             {categories.map((c) => {
               const on = follows.isFollowing(c.slug)
+              const Icon = ICONS[c.icon]
               return (
-                <button key={c.id} type="button" className={`onboard-chip ${on ? 'on' : ''}`} aria-pressed={on}
-                  onClick={() => follows.toggle(c.slug)}>{c.name}</button>
+                <button key={c.id} type="button" className={`onboard-option ${on ? 'on' : ''}`} aria-pressed={on}
+                  onClick={() => follows.toggle(c.slug)}>
+                  <span className={`onboard-option-icon tone-${c.color}`}>{Icon && <Icon size={20} />}</span>
+                  <span className="onboard-option-name">{c.name}</span>
+                  <span className="onboard-check" aria-hidden="true">{on && <Check size={16} strokeWidth={3} />}</span>
+                </button>
               )
             })}
           </div>

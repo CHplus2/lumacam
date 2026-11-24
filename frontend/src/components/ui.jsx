@@ -25,7 +25,7 @@ export function Lumi({ mood, size = 120 }) {
 export function EmptyState({ title, text, action, mood = 'sleepy' }) {
   return (
     <div className="empty">
-      <Lumi mood={mood} size={110} />
+      <Lumi mood={mood} size={160} />
       <h3>{title}</h3>
       {text && <p className="muted">{text}</p>}
       {action}

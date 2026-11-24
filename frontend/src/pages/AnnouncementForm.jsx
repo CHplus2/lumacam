@@ -165,7 +165,7 @@ export default function AnnouncementForm() {
   if (success) {
     return (
       <div className="card center-card">
-        <Lumi mood="happy" size={140} />
+        <Lumi mood="happy" size={190} />
         <h1>Your announcement is live</h1>
         <p className="muted">Everyone can see it now. Only you can edit or delete it: find it any time under My posts.</p>
         <div className="row">
