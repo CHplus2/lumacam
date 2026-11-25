@@ -1073,3 +1073,24 @@ class GuestContactTests(BaseCase):
         # Any signed-in student sees it, not only the owner.
         bob = APIClient(); bob.force_authenticate(User.objects.create_user('bob', password=PW))
         self.assertEqual(bob.get(f'/api/announcements/{wa.id}/').data['contact_info'], '60123456789')
+
+
+class DeleteAccountTests(BaseCase):
+    """Users can erase their account and posts themselves."""
+
+    def test_wrong_password_keeps_everything(self):
+        self.make()
+        self.assertEqual(self.client.delete('/api/auth/me/', {'password': 'nope'}).status_code, 400)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+        self.assertEqual(Announcement.objects.count(), 1)
+
+    def test_deletes_account_posts_images_and_token(self):
+        bob = User.objects.create_user('bob', password=PW)
+        theirs = self.make(publisher=bob)
+        mine = self.make(image=image_file())
+        self.make(status='removed')  # posts in the Trash go too
+        stored = mine.image.name
+        self.assertEqual(self.client.delete('/api/auth/me/', {'password': PW}).status_code, 204)
+        self.assertFalse(User.objects.filter(username='alice').exists())
+        self.assertEqual(list(Announcement.objects.values_list('id', flat=True)), [theirs.id])
+        self.assertFalse(StoredFile.objects.filter(name=stored).exists())

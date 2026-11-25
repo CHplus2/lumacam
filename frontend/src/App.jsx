@@ -10,6 +10,7 @@ import Categories from './pages/Categories'
 import Trash from './pages/Trash'
 import NotificationSettings from './pages/NotificationSettings'
 import AuthPage from './pages/AuthPage'
+import Privacy from './pages/Privacy'
 
 const auth = (el) => <RequireAuth>{el}</RequireAuth>
 
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="notifications" element={<NotificationSettings />} />
         <Route path="login" element={<AuthPage mode="login" />} />
         <Route path="register" element={<AuthPage mode="register" />} />
+        <Route path="privacy" element={<Privacy />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

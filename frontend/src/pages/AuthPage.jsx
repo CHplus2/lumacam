@@ -57,6 +57,7 @@ export default function AuthPage({ mode }) {
         <input id="password" type="password" value={form.password} onChange={set('password')}
           autoComplete={signup ? 'new-password' : 'current-password'} required />
       </Field>
+      {signup && <p className="muted small">By creating an account you agree to our <Link to="/privacy">privacy notice and rules</Link>.</p>}
       <button className="btn btn-primary" disabled={busy}>
         {busy ? (signup ? 'Creating account...' : 'Logging in...') : (signup ? 'Create account' : 'Log in')}
       </button>

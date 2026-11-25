@@ -53,9 +53,29 @@ class LogoutView(APIView):
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_scope = 'auth'
+
+    def get_throttles(self):
+        # Only the password check (delete) is limited, against guessing.
+        return super().get_throttles() if self.request.method == 'DELETE' else []
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)
+
+    def delete(self, request):
+        """Erase this account and every post it made (PDPA: users can have their data deleted).
+
+        Asks for the password again, so a token left on a shared phone can't wipe the account.
+        """
+        user = request.user
+        if not user.check_password(request.data.get('password') or ''):
+            return Response({'detail': 'Wrong password.'}, status=status.HTTP_400_BAD_REQUEST)
+        if user.is_superuser:
+            return Response({'detail': 'Admin accounts are removed by another admin.'}, status=status.HTTP_400_BAD_REQUEST)
+        for post in user.announcements.all():
+            post.delete()  # one by one: the model's delete() also erases the stored image
+        user.delete()  # its login token goes with it
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ClaimPostsView(APIView):
