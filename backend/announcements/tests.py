@@ -1056,3 +1056,20 @@ class SeedDemoAdminTests(APITestCase):
     def test_password_from_environment(self):
         _, admin = self.run_seed(SEED_ADMIN_PASSWORD='Env-pass-2026!')
         self.assertTrue(admin.check_password('Env-pass-2026!'))
+
+
+class GuestContactTests(BaseCase):
+    """Phone numbers and emails are only shown to signed-in students (stops scraping)."""
+
+    def test_guest_sees_no_phone_or_email_but_keeps_links(self):
+        wa = self.make()
+        mail = self.make(contact_method='email', contact_info='seller@example.com')
+        link = self.make(contact_method='link', contact_info='https://forms.gle/abc')
+        guest = APIClient()
+        for post, want in ((wa, ''), (mail, ''), (link, 'https://forms.gle/abc')):
+            self.assertEqual(guest.get(f'/api/announcements/{post.id}/').data['contact_info'], want)
+        listed = {p['id']: p['contact_info'] for p in guest.get('/api/announcements/').data['results']}
+        self.assertEqual(listed[wa.id], '')
+        # Any signed-in student sees it, not only the owner.
+        bob = APIClient(); bob.force_authenticate(User.objects.create_user('bob', password=PW))
+        self.assertEqual(bob.get(f'/api/announcements/{wa.id}/').data['contact_info'], '60123456789')

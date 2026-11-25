@@ -34,6 +34,8 @@ export default function Detail() {
   if (error) return <ErrorBox message={error} />
 
   const contact = contactLink(a)
+  // The server hides phone numbers and emails from guests; offer sign-in instead.
+  const contactLocked = !loggedIn && ['whatsapp', 'email'].includes(a.contact_method)
   const formUrl = safeUrl(a.external_url)
   const ContactIcon = a.contact_method === 'email' ? Mail : a.contact_method === 'whatsapp' ? MessageCircle : ExternalLink
 
@@ -110,9 +112,10 @@ export default function Detail() {
           </div>
         )}
 
-        {(contact || formUrl) && (
+        {(contact || formUrl || contactLocked) && (
         <div className="contact-box">
-          <h3>{contact ? 'Contact' : 'Links'}</h3>
+          <h3>{contact || contactLocked ? 'Contact' : 'Links'}</h3>
+          {contactLocked && <p className="muted">Sign in to see their {a.contact_method === 'email' ? 'email' : 'WhatsApp number'}. It's free and takes a minute.</p>}
           {contact && (
             <p className="muted">
               {a.contact_method === 'whatsapp' && `WhatsApp: +${a.contact_info}`}
@@ -121,6 +124,11 @@ export default function Detail() {
             </p>
           )}
           <div className="row">
+            {contactLocked && (
+              <Link className="btn btn-primary" to={`/login?next=/announcements/${a.id}`}>
+                <Lock size={18} /> Sign in to contact
+              </Link>
+            )}
             {contact && (
               <a className="btn btn-primary" href={contact.href}
                 {...(contact.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
