@@ -385,6 +385,9 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
 .is-list .date-tile, .is-list .stock-badge.on-image { display: none; }
 .is-list .stock-badge.list-only { display: inline-flex; }
 .is-list .ann-body { padding: 10px 14px; gap: 4px; min-width: 0; }
+/* Badges stay on one line; anything that doesn't fit fades out at the edge. */
+.is-list .ann-badges { flex-wrap: nowrap; overflow: hidden; -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); mask-image: linear-gradient(to right, #000 85%, transparent); }
+.is-list .ann-badges > * { flex: none; }
 .is-list .ann-title { font-size: 0.98rem; -webkit-line-clamp: 1; }
 .is-list .ann-desc { -webkit-line-clamp: 1; font-size: 0.85rem; }
 .is-list .ann-meta { margin-top: 2px; }
