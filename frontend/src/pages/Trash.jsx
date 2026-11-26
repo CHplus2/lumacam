@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArchiveRestore, Trash2 } from 'lucide-react'
+import { ArchiveRestore, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { ICONS, TRASH_DAYS, fmtRelative, timeLeft } from '../utils'
@@ -100,9 +100,12 @@ export default function Trash() {
       </div>
 
       {message && (
-        <div className={`alert ${message.error ? 'alert-error' : 'alert-ok'}`} role="status">
+        <div key={message.text} role="status"
+          className={`alert ${message.error ? 'alert-error' : 'alert-ok toast-fade'}`}
+          onAnimationEnd={(e) => { if (e.animationName === 'toast-fade') setMessage(null) }}>
           <span>{message.text}</span>
           {message.to && <Link to={message.to} className="btn btn-sm">{message.link}</Link>}
+          <button type="button" className="icon-btn" aria-label="Dismiss" onClick={() => setMessage(null)}><X size={16} /></button>
         </div>
       )}
       <ErrorBox message={error} onRetry={() => load()} />
