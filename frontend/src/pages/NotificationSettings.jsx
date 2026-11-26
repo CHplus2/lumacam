@@ -8,6 +8,8 @@ import {
 } from '../push'
 import { ErrorBox, Spinner } from '../components/ui'
 import { ICONS } from '../utils'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../auth'
 
 function PhoneStatus({ follows }) {
   const { slugs, push, setPush } = follows
@@ -88,6 +90,7 @@ export default function NotificationSettings() {
   const follows = useFollows()
   const { slugs, isFollowing, toggle, push, setPush } = follows
   const { categories, loading } = useCategories()
+  const { loggedIn, user } = useAuth()
 
   return (
     <div className="card form notif-settings">
@@ -95,6 +98,11 @@ export default function NotificationSettings() {
       <p className="muted">
         LumaCam only notifies you about <strong>new posts in the categories you pick</strong>. Nothing else: no ads,
         no reminders, no messages from other people.
+      </p>
+      <p className="muted small sync-note">
+        {loggedIn
+          ? <>Saved to your account <strong>@{user.username}</strong>: the same on every device you&apos;re logged in on. Phone notifications still need turning on once per device.</>
+          : <>Saved on this device only. <Link to="/login?next=/notifications">Log in</Link> to keep them on all your devices.</>}
       </p>
 
       <section className="field">

@@ -752,7 +752,8 @@ class PushTests(BaseCase):
         body = {'subscription': {'endpoint': endpoint or self.FCM + 'device-1', 'keys': self.keys},
                 'categories': list(categories), 'frequency': 'every', 'quiet_hours': False}
         body.update(settings)
-        return self.client.post('/api/push/subscribe/', body, format='json')
+        # Device-only subscriptions (logged out); account-linked ones are tested in AccountPrefsTests.
+        return APIClient().post('/api/push/subscribe/', body, format='json')
 
     def test_public_key_is_stable_p256_point(self):
         import base64
@@ -963,8 +964,8 @@ class PushTests(BaseCase):
                          {'subscribed': False})
         self.subscribe(categories=['events'], frequency='daily', quiet_hours=True, utc_offset_minutes=480)
         r = self.client.post('/api/push/status/', {'endpoint': self.FCM + 'device-1'}, format='json')
-        self.assertEqual(r.data, {'subscribed': True, 'categories': ['events'], 'frequency': 'daily',
-                                  'quiet_hours': True, 'utc_offset_minutes': 480})
+        self.assertEqual(r.data, {'subscribed': True, 'linked_to_account': False, 'categories': ['events'],
+                                  'frequency': 'daily', 'quiet_hours': True, 'utc_offset_minutes': 480})
 
 
 
@@ -1209,3 +1210,82 @@ class SubcategoryTests(BaseCase):
         self.assertEqual(r.data['subcategory_name'], 'Snacks')
         r = self.client.patch(f'/api/announcements/{pk}/', {'subcategory': ''}, format='multipart')
         self.assertEqual((r.status_code, r.data['subcategory']), (200, None))
+
+
+class AccountPrefsTests(BaseCase):
+    """Notification settings belong to the account and apply on all its logged-in devices."""
+    FCM = 'https://fcm.googleapis.com/fcm/send/'
+
+    def setUp(self):
+        super().setUp()
+        import base64
+        import os
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        raw = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+        b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b'=').decode()  # noqa: E731
+        self.keys = {'p256dh': b64(raw), 'auth': b64(os.urandom(16))}
+
+    def device(self, name, client=None, **body):
+        data = {'subscription': {'endpoint': self.FCM + name, 'keys': self.keys}, 'categories': [],
+                'frequency': 'every', 'quiet_hours': False}
+        data.update(body)
+        return (client or self.client).post('/api/push/subscribe/', data, format='json')
+
+    def test_prefs_get_put(self):
+        self.assertEqual(self.client.get('/api/auth/prefs/').data['saved'], False)
+        r = self.client.put('/api/auth/prefs/', {'categories': ['food-drinks', 'events', 'nope'], 'frequency': 'daily',
+                                                 'quiet_hours': False}, format='json')
+        self.assertEqual((r.data['saved'], r.data['categories'], r.data['frequency'], r.data['quiet_hours']),
+                         (True, ['events', 'food-drinks'], 'daily', False))
+        self.assertEqual(self.client.get('/api/auth/prefs/').data['categories'], ['events', 'food-drinks'])
+        self.assertEqual(APIClient().get('/api/auth/prefs/').status_code, 401)
+        self.assertEqual(self.client.put('/api/auth/prefs/', {'frequency': 'always'}, format='json').status_code, 400)
+
+    def test_logged_in_device_is_linked_and_saves_prefs(self):
+        r = self.device('phone', categories=['events'])
+        self.assertTrue(r.data['linked_to_account'])
+        self.assertEqual(self.client.get('/api/auth/prefs/').data['categories'], ['events'])
+
+    def test_all_logged_in_devices_follow_the_account(self):
+        from unittest import mock
+        self.device('phone', categories=['food-drinks'])
+        self.device('laptop', categories=['food-drinks'])
+        # Later the account changes its follows (e.g. on a third device without push).
+        self.client.put('/api/auth/prefs/', {'categories': ['events'], 'frequency': 'every', 'quiet_hours': False},
+                        format='json')
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver:
+            self.client.post('/api/announcements/', self.payload(title='Food post'))
+            self.assertEqual(deliver.call_count, 0)  # no longer follows food
+            self.client.post('/api/announcements/', self.payload(title='Event post', category=self.other_cat.id))
+        self.assertEqual(sorted(c.args[0]['endpoint'] for c in deliver.call_args_list),
+                         [self.FCM + 'laptop', self.FCM + 'phone'])
+
+    def test_account_limits_apply_to_linked_devices(self):
+        from unittest import mock
+        self.device('phone', categories=['food-drinks'])
+        self.client.put('/api/auth/prefs/', {'categories': ['food-drinks'], 'frequency': 'hourly', 'quiet_hours': False},
+                        format='json')
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver:
+            self.client.post('/api/announcements/', self.payload(title='One'))
+            self.client.post('/api/announcements/', self.payload(title='Two'))
+        self.assertEqual(deliver.call_count, 1)
+
+    def test_logging_out_device_unlinks_it(self):
+        from announcements.models import PushSubscription
+        self.device('phone', categories=['events'])
+        r = self.device('phone', client=APIClient(), categories=['surveys'])  # same phone, logged out now
+        self.assertFalse(r.data['linked_to_account'])
+        self.assertIsNone(PushSubscription.objects.get().user_id)
+
+    def test_log_out_everywhere_removes_account_devices(self):
+        from announcements.models import PushSubscription
+        from rest_framework.authtoken.models import Token
+        self.device('phone', categories=['events'])
+        self.device('anon', client=APIClient(), categories=['events'])
+        token = Token.objects.create(user=self.user)
+        c = APIClient(); c.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+        self.assertEqual(c.post('/api/auth/logout/').status_code, 204)
+        self.assertEqual(list(PushSubscription.objects.values_list('endpoint', flat=True)), [self.FCM + 'anon'])
+

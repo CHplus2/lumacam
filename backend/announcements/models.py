@@ -182,6 +182,10 @@ class PushSubscription(models.Model):
     categories = models.ManyToManyField(Category, blank=True, related_name='push_subscriptions')
     frequency = models.CharField(max_length=10, choices=Frequency.choices, default=Frequency.HOURLY)
     quiet_hours = models.BooleanField(default=True)
+    # Set when the device is logged in: then the account's NotificationPrefs decide
+    # which categories and limits apply, not the device's own copy above.
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE,
+                             related_name='push_subscriptions')
     # Minutes to add to UTC to get the device's local time (UTC+8 -> 480).
     utc_offset_minutes = models.SmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -196,9 +200,14 @@ class PushSubscription(models.Model):
         from datetime import timedelta, timezone as dt_timezone
         return now.astimezone(dt_timezone.utc) + timedelta(minutes=self.utc_offset_minutes)
 
+    def effective(self):
+        """(frequency, quiet_hours) from the account if linked, else this device's own."""
+        prefs = getattr(self.user, 'notification_prefs', None) if self.user_id else None
+        return (prefs.frequency, prefs.quiet_hours) if prefs else (self.frequency, self.quiet_hours)
+
     def in_quiet_hours(self, now):
         hour = self.local_now(now).hour
-        return self.quiet_hours and (hour >= self.QUIET_START or hour < self.QUIET_END)
+        return self.effective()[1] and (hour >= self.QUIET_START or hour < self.QUIET_END)
 
     def may_notify(self, now):
         """True if a new-post notification is allowed right now under this device's limits."""
@@ -206,12 +215,29 @@ class PushSubscription(models.Model):
         if self.in_quiet_hours(now):
             return False
         last = self.last_sent_at
-        if last is None or self.frequency == self.Frequency.EVERY:
+        frequency = self.effective()[0]
+        if last is None or frequency == self.Frequency.EVERY:
             return True
-        if self.frequency == self.Frequency.HOURLY:
+        if frequency == self.Frequency.HOURLY:
             return now - last >= timedelta(hours=1)
         return self.local_now(last).date() < self.local_now(now).date()  # DAILY: once per local day
 
     def as_subscription_info(self):
         return {'endpoint': self.endpoint, 'keys': {'p256dh': self.p256dh, 'auth': self.auth}}
+
+
+class NotificationPrefs(models.Model):
+    """An account's notification choices, shared by every device logged in with it."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notification_prefs')
+    categories = models.ManyToManyField(Category, blank=True, related_name='followers')
+    frequency = models.CharField(max_length=10, choices=PushSubscription.Frequency.choices,
+                                 default=PushSubscription.Frequency.HOURLY)
+    quiet_hours = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = 'notification prefs'
+
+    def __str__(self):
+        return f'Notification prefs for {self.user}'
 

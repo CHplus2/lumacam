@@ -8,7 +8,7 @@ LumaCam is a campus announcement platform for food, marketplace, events, surveys
 - Posts record their `publisher` account; the shown name comes from the account. Only that account can edit, delete, change stock or restore the post (`ownership.IsPublisherOrReadOnly`). Categories record `created_by`; only the creator can delete or restore them (once empty). The original six categories and posts with no owner can only be changed in `/django-admin/`.
 - **Log out** clears this device; **Log out on all devices** also deletes the token on the server.
 - Posts made earlier with a browser edit key are moved into your account the first time you log in on that browser (`POST /api/auth/claim/`).
-- Phone notifications and followed categories stay per device and don't need an account.
+- Notification settings follow the account when logged in (see Phone notifications); logged-out visitors keep device-only settings.
 
 ## Prerequisites
 
@@ -64,7 +64,10 @@ Set `DATABASE_URL`. With `DEBUG=false` the server applies pending migrations its
 
 ### Phone notifications (Web Push)
 
-Visitors pick categories and turn on phone notifications at **Notifications** (bell, then *Notification settings*, or `/notifications`). No account is needed: the browser's push subscription is stored with the chosen categories. When someone posts in one of those categories, the server sends an encrypted Web Push message (`announcements/push.py`, using `pywebpush`).
+Visitors pick categories and turn on phone notifications at **Notifications** (bell, then *Notification settings*, or `/notifications`).
+
+- **Logged in:** followed categories, frequency and quiet hours are saved on the account (`NotificationPrefs`, `GET/PUT /api/auth/prefs/`) and are the same on every device. Each device where phone notifications are turned on is linked to the account (`PushSubscription.user`) and uses the account's settings. Logging in adds the device's earlier follows to the account; logging out stops that device's notifications and clears its copy; **Log out on all devices** removes every linked device.
+- **Logged out:** settings are kept on the device only, and the push subscription stores its own categories. When someone posts in one of those categories, the server sends an encrypted Web Push message (`announcements/push.py`, using `pywebpush`).
 
 Anti-spam limits are enforced on the server for each device:
 
@@ -143,6 +146,7 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 | `DELETE /trash/announcements/:id/`, `DELETE /trash/categories/:id/` | delete your own item forever (a category only once no deleted posts use it) |
 | `POST /trash/announcements/:id/restore/`, `POST /trash/categories/:id/restore/` | restore your own; a post brings its trashed category back too |
 | `GET /pickup-locations/?category=` | pickup places used by live posts, most used first |
+| `GET`, `PUT /auth/prefs/` | the account's notification settings: `categories` (slugs), `frequency`, `quiet_hours` |
 | `GET /push/key/` | Web Push public key |
 | `POST /push/subscribe/` | `subscription`, `categories`, `frequency` (`every`/`hourly`/`daily`), `quiet_hours`, `utc_offset_minutes`; creates or updates this device |
 | `POST /push/status/`, `/push/unsubscribe/`, `/push/test/` | by `endpoint`; the test ignores the limits and doesn't count toward them |
@@ -170,7 +174,7 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 
 - Accounts are username + password with no email verification or password reset; production should use university single sign-on and add moderation.
 - Rate limits are the only spam control. On serverless hosting the counters are per instance and therefore weak.
-- Notification choices are per browser/device (no accounts). The in-app bell checks every minute while the site is open; phone notifications use Web Push. There are no email alerts, and posts held back by quiet hours or the frequency limit are not delivered later.
+- Logged-out visitors' notification choices are per device. The in-app bell checks every minute while the site is open; phone notifications use Web Push. There are no email alerts, and posts held back by quiet hours or the frequency limit are not delivered later.
 - Images are stored in the database. That is fine for a demo, but a large site should move them to object storage.
 - Seeded demo images are generated gradients. Real photographs come from uploads.
 - Search is case-insensitive substring matching (no ranking).

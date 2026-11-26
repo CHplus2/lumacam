@@ -43,10 +43,15 @@ class LoginView(APIView):
 
 
 class LogoutView(APIView):
-    """Logs this account out everywhere (the token is shared by its devices)."""
+    """Logs this account out everywhere (the token is shared by its devices).
+
+    Its devices' phone notifications stop too.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        from announcements.models import PushSubscription
+        PushSubscription.objects.filter(user=request.user).delete()
         Token.objects.filter(user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

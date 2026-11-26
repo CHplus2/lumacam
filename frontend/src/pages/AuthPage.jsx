@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import api, { parseError } from '../api'
 import { setAuth, useAuth } from '../auth'
 import { claimBrowserPosts } from '../ownership'
+import { mergeOnLogin } from '../accountPrefs'
 import { Field } from '../components/fields'
 import { ErrorBox } from '../components/ui'
 import { safeNext } from '../utils'
@@ -29,6 +30,7 @@ export default function AuthPage({ mode }) {
       const { data } = await api.post(signup ? '/auth/register/' : '/auth/login/', body)
       setAuth(data.token, data.user)
       try { await claimBrowserPosts(api) } catch { /* not critical */ }
+      try { await mergeOnLogin(api) } catch { /* not critical: settings sync on the next change */ }
       navigate(next, { replace: true })
     } catch (err) {
       const p = parseError(err); setError(p.message); setFields(p.fields)

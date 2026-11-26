@@ -224,6 +224,7 @@ label { font-weight: 600; font-size: 0.9rem; }
 .push-card { border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: #fafbff; display: flex; flex-direction: column; gap: 10px; }
 .push-card.is-on { border-color: #34d399; background: #f0fbf4; }
 .push-head { gap: 8px; }
+.sync-note { margin-top: -8px; padding: 8px 12px; border-radius: 10px; background: #f5f6ff; }
 .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 0.9rem; cursor: pointer; }
 .check input { width: auto; }

@@ -42,6 +42,23 @@ function subscribe(cb) {
   return () => { window.removeEventListener(EVENT, cb); window.removeEventListener('storage', onStorage) }
 }
 
+/** Current settings, outside React. */
+export const readFollows = () => read()
+
+/** Replace this device's copy with the account's settings (keeps push on/off, which is per device). */
+export function applyAccountPrefs(prefs) {
+  const cur = read()
+  write({
+    ...cur,
+    slugs: prefs.categories,
+    lastSeen: cur.lastSeen || new Date().toISOString(),
+    push: { ...cur.push, frequency: prefs.frequency, quietHours: prefs.quiet_hours },
+  })
+}
+
+/** Forget everything on log out, so the next person on this device starts fresh. */
+export const clearFollows = () => write(EMPTY)
+
 export function useFollows() {
   const state = useSyncExternalStore(subscribe, read, () => EMPTY)
   return {

@@ -1,13 +1,19 @@
 from django.contrib import admin
 
-from .models import Announcement, Category, PickupLocation, PushSubscription, Subcategory
+from .models import Announcement, Category, NotificationPrefs, PickupLocation, PushSubscription, Subcategory
 
 admin.site.register(PickupLocation)
 
 
 @admin.register(PushSubscription)
 class PushSubscriptionAdmin(admin.ModelAdmin):
-    list_display = ('__str__', 'frequency', 'quiet_hours', 'last_sent_at', 'created_at')
+    list_display = ('__str__', 'user', 'frequency', 'quiet_hours', 'last_sent_at', 'created_at')
+    filter_horizontal = ('categories',)
+
+
+@admin.register(NotificationPrefs)
+class NotificationPrefsAdmin(admin.ModelAdmin):
+    list_display = ('user', 'frequency', 'quiet_hours', 'updated_at')
     filter_horizontal = ('categories',)
 
 
