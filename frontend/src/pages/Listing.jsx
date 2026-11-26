@@ -184,9 +184,10 @@ export default function Listing({ mine = false }) {
       <div className={`page-head ${category ? `tone-${category.color}` : ''}`}>
         {Icon && <span className="cat-icon"><Icon size={26} /></span>}
         <div className="grow">
-          <h1>{category ? category.name : mine ? 'My posts' : 'Explore all announcements'}</h1>
+          {/* On a category page, wait for the category instead of flashing the Explore title. */}
+          <h1>{category ? category.name : slug ? '\u00a0' : mine ? 'My posts' : 'Explore all announcements'}</h1>
           <p className="muted">
-            {category ? category.description : mine
+            {category ? category.description : slug ? '\u00a0' : mine
               ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash" data-tour="trash">Trash</Link>.</>
               : 'Browse everything shared by your campus community.'}
           </p>
