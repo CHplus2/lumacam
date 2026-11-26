@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Bell, BellOff, CalendarDays, MapPin, PackageCheck, Pencil, Search, Trash2, X } from 'lucide-react'
+import { ArrowUpDown, Bell, BellOff, CalendarDays, MapPin, PackageCheck, Pencil, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
@@ -135,7 +135,6 @@ export default function Listing({ mine = false }) {
   const pickWhen = (when) => setDateFilter(when === 'custom'
     ? { when, from: dates.from || todayISO(), to: dates.to }
     : { when, from: '', to: '' })
-  const clearDates = () => setDateFilter({ when: '', from: '', to: '' })
 
   const setParam = (key, value) => {
     const next = new URLSearchParams(params)
@@ -181,12 +180,12 @@ export default function Listing({ mine = false }) {
     <>
       <TrashNotice key={trashed?.id} item={trashed} onClose={closeNotice}
         onUndone={() => { load(1, true); reloadCategories() }} />
-      <div className={`page-head ${category ? `tone-${category.color}` : ''}`}>
-        {Icon && <span className="cat-icon"><Icon size={26} /></span>}
-        <div className="grow">
+      <div className={`page-head page-head-compact ${category ? `tone-${category.color}` : ''}`}>
+        {Icon && <span className="cat-icon"><Icon size={22} /></span>}
+        <div className="grow page-head-text">
           {/* On a category page, wait for the category instead of flashing the Explore title. */}
           <h1>{category ? category.name : slug ? '\u00a0' : mine ? 'My posts' : 'Explore all announcements'}</h1>
-          <p className="muted">
+          <p className="muted page-head-desc">
             {category ? category.description : slug ? '\u00a0' : mine
               ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash" data-tour="trash">Trash</Link>.</>
               : 'Browse everything shared by your campus community.'}
@@ -208,72 +207,75 @@ export default function Listing({ mine = false }) {
         ))}
       </div>}
 
-      <div className="toolbar" data-tour="filters">
+      <div className="filter-block" data-tour="filters">
+      <div className="toolbar">
         <div className="search-bar">
           <Search size={18} />
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
             placeholder={category ? `Search in ${category.name}...` : 'Search announcements...'} aria-label="Search" />
           {q && <button className="icon-btn" aria-label="Clear search" onClick={() => setQ('')}><X size={16} /></button>}
         </div>
-        <select value={ordering} onChange={(e) => setSort(e.target.value)} aria-label="Sort by">
-          {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
       </div>
 
-      {selling && (
-        <div className="date-filter sell-filter">
-          <span className="date-filter-label"><PackageCheck size={16} /> Stock</span>
-          <div className="chips chips-small">
-            <button type="button" aria-pressed={stockIn} className={`chip ${stockIn ? 'active' : ''}`}
-              onClick={() => setParam('stock', stockIn ? '' : 'in')}>In stock only</button>
-          </div>
-          {placeChips.length > 0 && (
-            <>
-              <span className="date-filter-label"><MapPin size={16} /> Pickup</span>
-              <div className="chips chips-small" role="radiogroup" aria-label="Pickup place">
-                <button type="button" role="radio" aria-checked={!pickup} className={`chip ${!pickup ? 'active' : ''}`}
-                  onClick={() => setParam('pickup', '')}>Anywhere</button>
-                {placeChips.slice(0, 12).map((pl) => {
-                  const on = pickup.toLowerCase() === pl.name.toLowerCase()
-                  return (
-                    <button key={pl.name} type="button" role="radio" aria-checked={on} className={`chip ${on ? 'active' : ''}`}
-                      onClick={() => setParam('pickup', on ? '' : pl.name)}>{pl.name}</button>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="date-filter">
-        <span className="date-filter-label"><CalendarDays size={16} /> Date</span>
-        <div className="chips chips-small" role="radiogroup" aria-label="Filter by date">
-          {WHEN.map((w) => (
-            <button key={w.value} type="button" role="radio" aria-checked={dates.when === w.value}
-              className={`chip ${dates.when === w.value ? 'active' : ''}`} onClick={() => pickWhen(w.value)}>
-              {w.label}
-            </button>
-          ))}
-        </div>
-        {dates.when === 'custom' && (
-          <div className="date-range">
-            <label className="sr-only" htmlFor="date_from">From</label>
-            <input id="date_from" type="date" value={dates.from} max={dates.to || undefined}
-              onChange={(e) => setDateFilter({ from: e.target.value })} />
-            <span className="muted">to</span>
-            <label className="sr-only" htmlFor="date_to">To</label>
-            <input id="date_to" type="date" value={dates.to} min={dates.from || undefined}
-              onChange={(e) => setDateFilter({ to: e.target.value })} />
-          </div>
+      <div className="filter-row" aria-label="Filters">
+        <label className="filter-pill">
+          <ArrowUpDown size={15} aria-hidden="true" />
+          <span className="sr-only">Sort by</span>
+          <select value={ordering} onChange={(e) => setSort(e.target.value)}>
+            {SORTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </label>
+        <label className={`filter-pill ${dates.when ? 'on' : ''}`}>
+          <CalendarDays size={15} aria-hidden="true" />
+          <span className="sr-only">Date</span>
+          <select value={dates.when} onChange={(e) => pickWhen(e.target.value)}>
+            {WHEN.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+          </select>
+        </label>
+        {selling && (
+          <label className={`filter-pill ${stockIn ? 'on' : ''}`}>
+            <PackageCheck size={15} aria-hidden="true" />
+            <span className="sr-only">Stock</span>
+            <select value={stockIn ? 'in' : ''} onChange={(e) => setParam('stock', e.target.value)}>
+              <option value="">Any stock</option>
+              <option value="in">In stock only</option>
+            </select>
+          </label>
+        )}
+        {selling && placeChips.length > 0 && (
+          <label className={`filter-pill ${pickup ? 'on' : ''}`}>
+            <MapPin size={15} aria-hidden="true" />
+            <span className="sr-only">Pickup place</span>
+            <select value={placeChips.find((pl) => pl.name.toLowerCase() === pickup.toLowerCase())?.name || ''}
+              onChange={(e) => setParam('pickup', e.target.value)}>
+              <option value="">Pickup anywhere</option>
+              {placeChips.slice(0, 30).map((pl) => <option key={pl.name} value={pl.name}>{pl.name}</option>)}
+            </select>
+          </label>
+        )}
+        {(dateActive || sellFiltersActive) && (
+          <button type="button" className="link-btn filter-clear" onClick={clearAllFilters}>Clear</button>
         )}
       </div>
+      {dates.when === 'custom' && (
+        <div className="date-range">
+          <label className="sr-only" htmlFor="date_from">From</label>
+          <input id="date_from" type="date" value={dates.from} max={dates.to || undefined}
+            onChange={(e) => setDateFilter({ from: e.target.value })} />
+          <span className="muted">to</span>
+          <label className="sr-only" htmlFor="date_to">To</label>
+          <input id="date_to" type="date" value={dates.to} min={dates.from || undefined}
+            onChange={(e) => setDateFilter({ to: e.target.value })} />
+        </div>
+      )}
+      </div>
+
       {dateActive && (
         <p className="muted small date-note">
           Showing posts happening {dates.from && dates.to
             ? (dates.from === dates.to ? `on ${fmtEventRange(dates.from)}` : `${fmtEventRange(dates.from, dates.to)}`)
             : dates.from ? `from ${fmtEventRange(dates.from)}` : `until ${fmtEventRange(dates.to)}`}.
-          {' '}Posts without a date are hidden. <button type="button" className="link-btn" onClick={clearDates}>Clear date filter</button>
+          {' '}Posts without a date are hidden.
         </p>
       )}
 

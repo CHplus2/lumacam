@@ -19,7 +19,7 @@ const TOURS = {
   ],
   listing: [
     { sel: '[data-tour="follow"]', mood: 'love', title: 'Follow this category', text: "I'll show new posts from here under the bell. Tap again to stop." },
-    { sel: '[data-tour="filters"]', mood: 'found', title: 'Narrow it down', text: 'Search inside this list, or sort it. Date and stock filters sit just below.' },
+    { sel: '[data-tour="filters"]', mood: 'found', title: 'Narrow it down', text: 'Search inside this list. Sort and filter by date, stock or pickup place in the row below.' },
     { sel: '.ann-card', mood: 'curious', title: 'Open a post', text: 'Tap any post to see the details, pickup place and how to contact the seller.' },
   ],
   detail: [
