@@ -1056,3 +1056,83 @@ class SeedDemoAdminTests(APITestCase):
     def test_password_from_environment(self):
         _, admin = self.run_seed(SEED_ADMIN_PASSWORD='Env-pass-2026!')
         self.assertTrue(admin.check_password('Env-pass-2026!'))
+
+
+class CategoryEditAndDeleteForeverTests(BaseCase):
+    def setUp(self):
+        super().setUp()
+        self.mine = Category.objects.create(name='Clubs', slug='clubs', icon='music', color='blue',
+                                            created_by=self.user, sells_items=True)
+        self.bob = APIClient()
+        self.bob.force_authenticate(User.objects.create_user('bob', password=PW))
+
+    # ---- editing categories ----
+    def test_creator_can_edit_and_slug_stays(self):
+        r = self.client.patch(f'/api/categories/{self.mine.id}/',
+                              {'name': 'Clubs & Societies', 'description': 'Student clubs', 'icon': 'trophy', 'color': 'rose'})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual((r.data['name'], r.data['slug'], r.data['icon'], r.data['color']),
+                         ('Clubs & Societies', 'clubs', 'trophy', 'rose'))
+        self.assertTrue(r.data['can_edit'])
+
+    def test_others_and_originals_cannot_be_edited(self):
+        self.assertEqual(self.bob.patch(f'/api/categories/{self.mine.id}/', {'name': 'Hacked'}).status_code, 403)
+        self.assertIn(APIClient().patch(f'/api/categories/{self.mine.id}/', {'name': 'x'}).status_code, (401, 403))
+        r = self.client.patch(f'/api/categories/{self.cat.id}/', {'name': 'Food'})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('site admin', r.data['detail'])
+        self.assertFalse(self.client.get(f'/api/categories/{self.cat.id}/').data['can_edit'])
+        self.mine.refresh_from_db()
+        self.assertEqual(self.mine.name, 'Clubs')
+
+    def test_rename_validation(self):
+        self.assertEqual(self.client.patch(f'/api/categories/{self.mine.id}/', {'name': 'food & drinks'}).status_code, 400)
+        Category.objects.create(name='Old one', slug='old-one', icon='tag', is_removed=True)
+        r = self.client.patch(f'/api/categories/{self.mine.id}/', {'name': 'old one'})
+        self.assertIn('deleted category', r.data['name'][0])
+        self.assertEqual(self.client.patch(f'/api/categories/{self.mine.id}/', {'name': 'clubs'}).status_code, 200)
+
+    def test_turning_off_selling_clears_stock_and_pickups(self):
+        a = self.client.post('/api/announcements/', self.payload(category=self.mine.id, availability='out',
+                                                                 pickup_locations=['Hostel A']), format='json').data
+        self.assertEqual(a['availability'], 'out')
+        self.client.patch(f'/api/categories/{self.mine.id}/', {'sells_items': False}, format='json')
+        post = self.client.get(f"/api/announcements/{a['id']}/").data
+        self.assertEqual((post['availability'], post['pickup_locations']), ('', []))
+
+    # ---- delete forever ----
+    def test_delete_post_forever(self):
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        pk = r.data['id']
+        self.assertEqual(self.client.delete(f'/api/trash/announcements/{pk}/').status_code, 404)  # not in Trash yet
+        self.client.delete(f'/api/announcements/{pk}/')
+        self.assertEqual(self.bob.delete(f'/api/trash/announcements/{pk}/').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/trash/announcements/{pk}/').status_code, 204)
+        self.assertFalse(Announcement.objects.filter(pk=pk).exists())
+        self.assertEqual(StoredFile.objects.count(), 0)
+        self.assertEqual(self.client.post(f'/api/trash/announcements/{pk}/restore/').status_code, 404)
+
+    def test_delete_category_forever(self):
+        self.client.delete(f'/api/categories/{self.mine.id}/')
+        self.assertEqual(self.bob.delete(f'/api/trash/categories/{self.mine.id}/').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/trash/categories/{self.mine.id}/').status_code, 204)
+        self.assertFalse(Category.objects.filter(pk=self.mine.id).exists())
+
+    def test_category_with_deleted_posts_waits(self):
+        mine = self.make(category=self.mine)
+        self.client.delete(f'/api/announcements/{mine.id}/')
+        self.client.delete(f'/api/categories/{self.mine.id}/')
+        r = self.client.delete(f'/api/trash/categories/{self.mine.id}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('1 of your deleted posts', r.data['detail'])
+        self.client.delete(f'/api/trash/announcements/{mine.id}/')
+        self.assertEqual(self.client.delete(f'/api/trash/categories/{self.mine.id}/').status_code, 204)
+
+    def test_other_peoples_deleted_posts_block_with_explanation(self):
+        theirs = Announcement.objects.create(title='Theirs', description='Bob posted this one.', category=self.mine,
+                                             publisher_name='Bob', status='removed', removed_at=timezone.now())
+        self.client.delete(f'/api/categories/{self.mine.id}/')
+        r = self.client.delete(f'/api/trash/categories/{self.mine.id}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('erased automatically', r.data['detail'])
+        self.assertTrue(Announcement.objects.filter(pk=theirs.pk).exists())

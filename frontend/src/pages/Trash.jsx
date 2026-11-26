@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArchiveRestore } from 'lucide-react'
+import { ArchiveRestore, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { ICONS, TRASH_DAYS, fmtRelative, timeLeft } from '../utils'
@@ -60,6 +60,19 @@ export default function Trash() {
         const extra = data.restored_category ? ` Its category "${data.restored_category}" was restored too.` : ''
         setMessage({ text: `Restored "${data.title}".${extra}`, to: `/announcements/${data.id}`, link: 'View post' })
       }
+    } catch (e) {
+      setMessage({ error: true, text: parseError(e).message })
+    } finally { setBusyId(null) }
+  }
+
+  const deleteForever = async (item) => {
+    const label = tab === 'categories' ? `the category "${item.name}"` : `"${item.title}"`
+    if (!window.confirm(`Delete ${label} forever? This can't be undone.`)) return
+    setBusyId(item.id); setMessage(null)
+    try {
+      await api.delete(`/trash/${tab}/${item.id}/`)
+      setItems((list) => list.filter((x) => x.id !== item.id))
+      setMessage({ text: `Deleted ${label} forever.` })
     } catch (e) {
       setMessage({ error: true, text: parseError(e).message })
     } finally { setBusyId(null) }
@@ -130,9 +143,14 @@ export default function Trash() {
                     )}
                     <ExpiryNote item={item} />
                   </div>
-                  <button type="button" className="btn btn-sm" onClick={() => restore(item)} disabled={busyId === item.id}>
-                    <ArchiveRestore size={15} /> {busyId === item.id ? 'Restoring...' : 'Restore'}
-                  </button>
+                  <div className="trash-actions">
+                    <button type="button" className="btn btn-sm" onClick={() => restore(item)} disabled={busyId === item.id}>
+                      <ArchiveRestore size={15} /> Restore
+                    </button>
+                    <button type="button" className="btn btn-sm btn-quiet-danger" onClick={() => deleteForever(item)} disabled={busyId === item.id}>
+                      <Trash2 size={15} /> Delete forever
+                    </button>
+                  </div>
                 </li>
               )
             })}

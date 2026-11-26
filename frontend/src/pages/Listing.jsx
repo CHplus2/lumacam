@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Bell, BellOff, CalendarDays, MapPin, PackageCheck, Search, Trash2, X } from 'lucide-react'
+import { Bell, BellOff, CalendarDays, MapPin, PackageCheck, Pencil, Search, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
@@ -310,12 +310,15 @@ export default function Listing({ mine = false }) {
         </>
       )}
 
-      {category?.can_delete && (
+      {category?.can_edit && (
         <div className="page-foot">
           <ErrorBox message={deleteError} />
-          <button className="btn btn-quiet-danger btn-sm" onClick={deleteCategory} disabled={deleting}>
-            <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Delete this category'}
-          </button>
+          <div className="row">
+            <Link to={`/categories/${category.id}/edit`} className="btn btn-quiet btn-sm"><Pencil size={14} /> Edit this category</Link>
+            <button className="btn btn-quiet-danger btn-sm" onClick={deleteCategory} disabled={deleting}>
+              <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Delete this category'}
+            </button>
+          </div>
         </div>
       )}
     </>

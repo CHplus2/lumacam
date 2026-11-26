@@ -26,6 +26,7 @@ export default function App() {
         <Route path="create" element={auth(<AnnouncementForm />)} />
         <Route path="categories" element={<Categories />} />
         <Route path="categories/new" element={auth(<CategoryForm />)} />
+        <Route path="categories/:id/edit" element={auth(<CategoryForm />)} />
         <Route path="trash" element={auth(<Trash />)} />
         <Route path="notifications" element={<NotificationSettings />} />
         <Route path="login" element={<AuthPage mode="login" />} />

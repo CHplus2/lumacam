@@ -233,6 +233,12 @@ label { font-weight: 600; font-size: 0.9rem; }
 .cat-delete { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--muted); display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow); transition: color 0.15s, background 0.15s, border-color 0.15s; }
 .cat-delete:hover, .cat-delete:focus-visible { color: var(--danger); background: #fef2f2; border-color: #fecaca; }
 .cat-delete:disabled { opacity: 0.5; cursor: wait; }
+.cat-actions { position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; }
+.cat-actions .cat-delete { position: static; }
+.cat-edit:hover, .cat-edit:focus-visible { color: var(--primary); background: #eef0ff; border-color: #c7d2fe; text-decoration: none; }
+.btn-quiet { border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }
+.btn-quiet:hover { background: #f3f4f8; color: var(--text); text-decoration: none; }
+.trash-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; flex: none; }
 
 /* Hero */
 .hero { background: linear-gradient(135deg, #eef0ff 0%, #f6f0ff 60%, #fff1f5 100%); border: 1px solid var(--border); border-radius: 24px; padding: 44px 32px; display: flex; flex-direction: column; gap: 12px; }
@@ -259,7 +265,7 @@ label { font-weight: 600; font-size: 0.9rem; }
 .cat-symbol-plus svg { margin-left: -6.25px; }
 .cat-name { font-weight: 700; font-size: 1.05rem; line-height: 1.25; min-width: 0; overflow-wrap: break-word; }
 /* Leave room for the bin button in the corner on the Categories page. */
-.cat-wrap .cat-name { padding-right: 36px; }
+.cat-wrap .cat-name { padding-right: 76px; } /* room for the edit and delete buttons */
 .cat-desc { grid-column: 1 / -1; color: #4b5563; font-size: 0.875rem; }
 .cat-count { grid-column: 1 / -1; margin-top: 6px; font-size: 0.8rem; font-weight: 600; color: var(--tone-fg); }
 
@@ -432,6 +438,9 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   .cat-name { font-size: 0.95rem; line-height: 1.25; }
   .cat-count { margin-top: 4px; }
   .cat-delete { top: 10px; right: 10px; width: 30px; height: 30px; }
+  .cat-actions { top: 10px; right: 10px; gap: 4px; }
+  .trash-actions { flex-direction: row; }
+  .trash-actions .btn { flex: 1; }
   .cat-desc { display: none; }
   .ann-grid { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }

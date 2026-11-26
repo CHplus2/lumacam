@@ -103,8 +103,8 @@ class CategoryListView(generics.ListCreateAPIView):
 
 
 
-class CategoryDetailView(generics.RetrieveDestroyAPIView):
-    """The account that created a category can delete it, once it has no posts.
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """The account that created a category can edit it, and delete it once it has no posts.
 
     Delete moves it to the Trash; nothing is moved. The original six have no creator.
     """
@@ -116,11 +116,18 @@ class CategoryDetailView(generics.RetrieveDestroyAPIView):
     def get_throttles(self):
         return [] if self.request.method in ('GET', 'HEAD', 'OPTIONS') else super().get_throttles()
 
+    def check_creator(self, cat, verb):
+        if not ownership.owns(self.request.user, cat, 'created_by_id'):
+            raise PermissionDenied(f'Only the person who created this category can {verb} it.'
+                                   if cat.created_by_id else f'The original categories can only be {verb}ed by the site admin.')
+
+    def perform_update(self, serializer):
+        self.check_creator(serializer.instance, 'edit')
+        serializer.save()
+
     def destroy(self, request, *args, **kwargs):
         cat = self.get_object()
-        if not ownership.owns(request.user, cat, 'created_by_id'):
-            raise PermissionDenied('Only the person who created this category can delete it.'
-                                   if cat.created_by_id else 'The original categories can only be removed by the site admin.')
+        self.check_creator(cat, 'delete')
         # Count expired posts too: they can still be opened and edited by link.
         posts = cat.announcements.filter(status=Announcement.Status.APPROVED).count()
         if posts:
@@ -388,6 +395,34 @@ class TrashRestoreView(APIView):
         ann.save(update_fields=['status', 'removed_at', 'updated_at'])
         return Response({'restored': 'announcement', 'id': ann.id, 'title': ann.title,
                          'restored_category': restored_category})
+
+
+class TrashDeleteForeverView(APIView):
+    """Erase your own deleted post or category now, instead of waiting 30 days."""
+    permission_classes = [IsAuthenticated]
+    throttle_scope = 'modify'
+    kind = None  # 'announcement' or 'category'
+
+    def delete(self, request, pk):
+        if self.kind == 'category':
+            cat = get_object_or_404(Category, pk=pk, is_removed=True)
+            if not ownership.owns(request.user, cat, 'created_by_id'):
+                raise PermissionDenied('Only the person who created this category can delete it.')
+            left = cat.announcements.count()  # only deleted posts can still point at it
+            if left:
+                mine = cat.announcements.filter(publisher=request.user).count()
+                detail = (f'{mine} of your deleted posts still use{"s" if mine == 1 else ""} this category. '
+                          'Delete them forever first.' if mine else
+                          'Other people\'s deleted posts still use this category. '
+                          'It will be erased automatically when they are.')
+                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+            cat.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        ann = get_object_or_404(Announcement, pk=pk, status=Announcement.Status.REMOVED)
+        if not ownership.owns(request.user, ann):
+            raise PermissionDenied(ownership.NOT_OWNER if ann.publisher_id else ownership.LEGACY)
+        ann.delete()  # also erases its stored image
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def serve_media(request, path):

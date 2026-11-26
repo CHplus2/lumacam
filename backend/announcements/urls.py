@@ -15,6 +15,8 @@ urlpatterns = [
     path('push/test/', views.PushTestView.as_view()),
     path('trash/announcements/', views.TrashAnnouncementListView.as_view()),
     path('trash/announcements/<int:pk>/restore/', views.TrashRestoreView.as_view(kind='announcement')),
+    path('trash/announcements/<int:pk>/', views.TrashDeleteForeverView.as_view(kind='announcement')),
     path('trash/categories/', views.TrashCategoryListView.as_view()),
     path('trash/categories/<int:pk>/restore/', views.TrashRestoreView.as_view(kind='category')),
+    path('trash/categories/<int:pk>/', views.TrashDeleteForeverView.as_view(kind='category')),
 ]

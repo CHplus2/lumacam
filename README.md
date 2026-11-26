@@ -52,7 +52,7 @@ All settings have development defaults. For deployments set these environment va
 
 Deleting a post or category moves it to the **Trash** (bin icon in the header, `/trash`), which has separate tabs for announcements and categories. Anyone can restore items there, and right after a delete an **Undo** banner appears. Restoring a post whose category is also in the Trash restores the category too.
 
-Items are erased for good `TRASH_DAYS` (default 30) after deletion. A category in the Trash waits until its newest deleted post is erased. Vercel has no always-on scheduler, so the clean-up runs when a server instance starts and whenever someone opens the Trash; `python manage.py purge_trash` runs it by hand or from cron. The app deliberately has no "delete forever" button, so a visitor to a shared link cannot erase recoverable items.
+Items are erased for good `TRASH_DAYS` (default 30) after deletion. A category in the Trash waits until its newest deleted post is erased. Vercel has no always-on scheduler, so the clean-up runs when a server instance starts and whenever someone opens the Trash; `python manage.py purge_trash` runs it by hand or from cron. Each account has its own Trash (only what it deleted), with **Restore** and **Delete forever**. A category can be deleted forever once no deleted posts still use it; otherwise it waits for them.
 
 `/django-admin/` can also restore items (Announcements filtered by "In trash", or Categories filtered by "is removed").
 
@@ -128,6 +128,7 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 | `GET /auth/me/`, `POST /auth/logout/`, `/auth/claim/` | need `Authorization: Token <key>` |
 | `GET /categories/` | with live announcement counts and `can_delete` for the creator |
 | `POST /categories/` | `name`, `description`, `icon`, `color`, `sells_items`; live immediately, rate limited |
+| `PATCH /categories/:id/` | creator only; name, description, icon, colour, `sells_items` (slug stays) |
 | `DELETE /categories/:id/` | only when the category has no posts (else 400); moves it to the Trash |
 | `GET /announcements/?category=&search=&date_from=&date_to=&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day. Selling categories: `stock=in` hides out-of-stock posts, `pickup=<name>` filters by pickup place |
 | `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; in selling categories `availability` (`available`/`limited`/`out`) and `pickup_locations` (list, or a JSON string in multipart, max 5); live immediately, rate limited |
@@ -135,6 +136,7 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 | `PATCH /announcements/:id/` | only the publisher's account (401 when logged out, 403 for others); multipart or JSON; `remove_image=true` drops the image; rate limited |
 | `DELETE /announcements/:id/` | publisher only; moves the post to the Trash; rate limited |
 | `GET /trash/announcements/?ids=1,2&search=`, `GET /trash/categories/` | Trash contents with `removed_at` and `purge_at` (only your own); also erases expired items |
+| `DELETE /trash/announcements/:id/`, `DELETE /trash/categories/:id/` | delete your own item forever (a category only once no deleted posts use it) |
 | `POST /trash/announcements/:id/restore/`, `POST /trash/categories/:id/restore/` | restore your own; a post brings its trashed category back too |
 | `GET /pickup-locations/?category=` | pickup places used by live posts, most used first |
 | `GET /push/key/` | Web Push public key |

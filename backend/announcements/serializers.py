@@ -26,11 +26,12 @@ CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
 class CategorySerializer(serializers.ModelSerializer):
     announcement_count = serializers.IntegerField(read_only=True, required=False)
     can_delete = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
         fields = ('id', 'name', 'slug', 'description', 'icon', 'color', 'sells_items', 'announcement_count',
-                  'can_delete')
+                  'can_delete', 'can_edit')
         read_only_fields = ('slug',)
         extra_kwargs = {'name': {'validators': []}}  # uniqueness checked case-insensitively below
 
@@ -39,13 +40,35 @@ class CategorySerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         return owns(getattr(request, 'user', None), obj, 'created_by_id')
 
+    def get_can_edit(self, obj):
+        return self.get_can_delete(obj)  # the creator may edit and delete
+
     def validate_name(self, value):
         value = ' '.join(value.split())
         if not 2 <= len(value) <= 40:
             raise serializers.ValidationError('Category name must be 2-40 characters.')
-        if Category.objects.filter(name__iexact=value, is_removed=False).exists():
+        others = Category.objects.filter(name__iexact=value)
+        if self.instance:
+            # Renaming: names are unique in the database, deleted categories included.
+            others = others.exclude(pk=self.instance.pk)
+            if others.filter(is_removed=False).exists():
+                raise serializers.ValidationError('A category with this name already exists.')
+            if others.exists():
+                raise serializers.ValidationError('A deleted category still uses this name. Pick another one.')
+        elif others.filter(is_removed=False).exists():
             raise serializers.ValidationError('A category with this name already exists.')
         return value
+
+    def update(self, instance, validated_data):
+        # The slug stays the same, so links and followed categories keep working.
+        turning_off_selling = instance.sells_items and validated_data.get('sells_items') is False
+        instance = super().update(instance, validated_data)
+        if turning_off_selling:
+            posts = instance.announcements.all()
+            posts.update(availability='', stock_updated_at=None)
+            for post in posts:
+                post.pickup_locations.clear()
+        return instance
 
     def validate_description(self, value):
         value = value.strip()
