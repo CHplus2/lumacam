@@ -182,16 +182,16 @@ export default function Listing({ mine = false }) {
     <>
       <TrashNotice key={trashed?.id} item={trashed} onClose={closeNotice}
         onUndone={() => { load(1, true); reloadCategories() }} />
-      <div className={`page-head page-head-compact ${category ? `tone-${category.color}` : ''}`}>
+      <div className={`page-head page-head-compact ${category ? `tone-${category.color}` : ''} ${category && !category.description ? 'no-desc' : ''}`}>
         {Icon && <span className="cat-icon"><Icon size={22} /></span>}
         <div className="grow page-head-text">
           {/* On a category page, wait for the category instead of flashing the Explore title. */}
           <h1>{category ? category.name : slug ? '\u00a0' : mine ? 'My posts' : 'Explore all announcements'}</h1>
-          <p className="muted page-head-desc">
+          {!(category && !category.description) && <p className="muted page-head-desc">
             {category ? category.description : slug ? '\u00a0' : mine
               ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash" data-tour="trash">Trash</Link>.</>
               : 'Browse everything shared by your campus community.'}
-          </p>
+          </p>}
         </div>
         {category && (
           <button type="button" data-tour="follow" className={`btn btn-sm ${following ? '' : 'btn-primary'}`} aria-pressed={following}
