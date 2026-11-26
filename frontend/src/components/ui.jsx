@@ -75,7 +75,7 @@ export function CategoryBadge({ category, sub }) {
   const Icon = ICONS[category.icon]
   return (
     <span className={`badge tone-${category.color}`}>
-      {Icon && <Icon size={13} />}{category.name}{sub && <span className="badge-sub">· {sub}</span>}
+      {Icon && <Icon size={13} />}{category.name}{sub && <span className="badge-sub">{' '}· {sub}</span>}
     </span>
   )
 }
