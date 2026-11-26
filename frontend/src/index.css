@@ -364,6 +364,32 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
 
 .ann-actions { padding: 0 16px 14px; display: flex; gap: 8px; }
 .ann-actions .btn { flex: 1; }
+
+/* Grid / list switch */
+.section-actions { display: flex; align-items: center; gap: 14px; flex: none; }
+.view-toggle { flex: none; display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.view-toggle button { width: 34px; height: 30px; border: 0; border-radius: 9px; background: none; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.view-toggle button:hover { color: var(--text); }
+.view-toggle button.on { background: #eef0ff; color: var(--primary); }
+.toolbar > .search-bar { flex: 1; min-width: 0; }
+.toolbar > .view-toggle { align-self: center; }
+
+/* List view: one compact row per post */
+.stock-badge.list-only { display: none; }
+.ann-grid.is-list { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.is-list .ann-card { flex-direction: row; align-items: center; }
+.is-list .ann-card:hover { transform: none; }
+.is-list .ann-link { flex-direction: row; align-items: stretch; min-width: 0; }
+.is-list .ann-thumb { flex: none; width: 112px; aspect-ratio: auto; min-height: 96px; }
+.is-list .ann-thumb > svg { width: 30px; height: 30px; }
+.is-list .date-tile, .is-list .stock-badge.on-image { display: none; }
+.is-list .stock-badge.list-only { display: inline-flex; }
+.is-list .ann-body { padding: 10px 14px; gap: 4px; min-width: 0; }
+.is-list .ann-title { font-size: 0.98rem; -webkit-line-clamp: 1; }
+.is-list .ann-desc { -webkit-line-clamp: 1; font-size: 0.85rem; }
+.is-list .ann-meta { margin-top: 2px; }
+.is-list .ann-actions { flex: none; padding: 0 14px 0 0; }
+.is-list .ann-actions .btn { flex: none; }
 .contact-whatsapp { color: #128c4b; border-color: #bbe7cd; background: #f0fbf4; }
 .contact-whatsapp:hover { background: #dcf5e6; }
 .ann-footer { border-top: 1px solid var(--border); padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -508,8 +534,14 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   .grid-2 { grid-template-columns: 1fr; }
   .form { padding: 20px; }
   .detail-main { padding: 20px; }
-  .toolbar { flex-direction: column; }
   .toolbar select { width: 100%; }
+  /* Phones: smaller list rows; contact button shows its icon only. */
+  .is-list .ann-thumb { width: 84px; min-height: 84px; }
+  .is-list .ann-body { padding: 8px 10px; }
+  .is-list .ann-badges .badge-sub, .is-list .ann-place { display: none; }
+  .is-list .ann-actions { padding-right: 10px; }
+  .is-list .ann-actions .btn { padding: 8px; }
+  .is-list .ann-actions .btn-label { display: none; }
   .notif-cats { grid-template-columns: minmax(0, 1fr); }
   .stock-option { flex-direction: column; gap: 2px; font-size: 0.8rem; min-height: 54px; }
   .date-range { width: 100%; }

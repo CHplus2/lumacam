@@ -6,6 +6,7 @@ import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import TrashNotice from '../components/TrashNotice'
 import ExpandableText from '../components/ExpandableText'
+import ViewToggle, { PostList } from '../components/ViewToggle'
 import { useFollows } from '../follows'
 import { ICONS, TRASH_DAYS, categoryDeleteBlocker, fmtEventRange, quickRange, todayISO } from '../utils'
 
@@ -222,6 +223,7 @@ export default function Listing({ mine = false }) {
             placeholder={category ? `Search in ${category.name}...` : 'Search announcements...'} aria-label="Search" />
           {q && <button className="icon-btn" aria-label="Clear search" onClick={() => setQ('')}><X size={16} /></button>}
         </div>
+        <ViewToggle />
       </div>
 
       <div className="filter-row" aria-label="Filters">
@@ -319,7 +321,7 @@ export default function Listing({ mine = false }) {
         />
       ) : (
         <>
-          <div className="ann-grid">{items.map((a) => <AnnouncementCard key={a.id} a={a} />)}</div>
+          <PostList>{items.map((a) => <AnnouncementCard key={a.id} a={a} />)}</PostList>
           {hasMore && (
             <div className="center">
               <button className="btn" disabled={loading} onClick={() => load(page + 1, false)}>

@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays, Plus, Search } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
+import ViewToggle, { PostList } from '../components/ViewToggle'
 import { ICONS, fmtEventRange, quickRange } from '../utils'
 
 // Home is built for "what's new": search, one row of categories, then the latest
@@ -71,14 +72,17 @@ export default function Home() {
       <section>
         <div className="section-head">
           <h2>Latest posts</h2>
-          <Link to="/explore" className="link-more">View all <ArrowRight size={16} /></Link>
+          <div className="section-actions">
+            <ViewToggle />
+            <Link to="/explore" className="link-more">View all <ArrowRight size={16} /></Link>
+          </div>
         </div>
         <ErrorBox message={error} />
         {loading ? <Spinner /> : recent.length === 0 ? (
           <EmptyState title="No announcements yet" text="Be the first to share something with your campus."
             action={<Link to="/create" className="btn btn-primary">Create announcement</Link>} />
         ) : (
-          <div className="ann-grid">{recent.map((a) => <AnnouncementCard key={a.id} a={a} />)}</div>
+          <PostList>{recent.map((a) => <AnnouncementCard key={a.id} a={a} />)}</PostList>
         )}
       </section>
 
