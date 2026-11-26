@@ -32,6 +32,25 @@ class Category(models.Model):
         return self.name
 
 
+class Subcategory(models.Model):
+    """An optional finer label inside a category, e.g. Food & Drinks > Desserts.
+
+    Managed by the category's creator in the category form (the original six:
+    starter sets, changed in /django-admin/). Posts pick at most one.
+    """
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='subcategories')
+    name = models.CharField(max_length=30)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        constraints = [models.UniqueConstraint(fields=['category', 'name'], name='unique_subcategory_name')]
+        verbose_name_plural = 'subcategories'
+
+    def __str__(self):
+        return f'{self.category.name} > {self.name}'
+
+
 class PickupLocation(models.Model):
     """A hostel or campus spot where buyers collect food or items, e.g. "Block C lobby"."""
     name = models.CharField(max_length=40, unique=True)
@@ -74,6 +93,9 @@ class Announcement(models.Model):
     title = models.CharField(max_length=120)
     description = models.TextField(max_length=3000)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name='announcements')
+    # Optional; must belong to `category`. Removing a subcategory just unsets it on posts.
+    subcategory = models.ForeignKey('Subcategory', null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name='announcements')
     # The account that posted it; only this account can edit, delete or restore it.
     publisher = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL, related_name='announcements')

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Announcement, Category, PickupLocation, PushSubscription
+from .models import Announcement, Category, PickupLocation, PushSubscription, Subcategory
 
 admin.site.register(PickupLocation)
 
@@ -12,8 +12,15 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
 
 
 
+class SubcategoryInline(admin.TabularInline):
+    model = Subcategory
+    extra = 1
+    fields = ('name', 'sort_order')
+
+
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
+    inlines = [SubcategoryInline]
     list_display = ('name', 'slug', 'is_removed', 'sort_order')
     list_filter = ('is_removed',)
     actions = ['restore']

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowUpDown, Bell, BellOff, CalendarDays, MapPin, PackageCheck, Pencil, Search, Trash2, X } from 'lucide-react'
+import { ArrowUpDown, Bell, BellOff, CalendarDays, MapPin, PackageCheck, Pencil, Search, Shapes, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
@@ -58,6 +58,8 @@ export default function Listing({ mine = false }) {
   const selling = Boolean(category?.sells_items)
   const stockIn = selling && params.get('stock') === 'in'
   const pickup = selling ? params.get('pickup') || '' : ''
+  const subcats = category?.subcategories || []
+  const sub = subcats.some((sc) => String(sc.id) === params.get('sub')) ? params.get('sub') : ''
   const [places, setPlaces] = useState([])
   useEffect(() => {
     if (!selling) return
@@ -97,7 +99,7 @@ export default function Listing({ mine = false }) {
         params: {
           category: slug || undefined, search: urlQ || undefined, ordering, page: pageNo, mine: mine ? 1 : undefined,
           date_from: dates.from || undefined, date_to: dates.to || undefined,
-          stock: stockIn ? 'in' : undefined, pickup: pickup || undefined,
+          stock: stockIn ? 'in' : undefined, pickup: pickup || undefined, sub: sub || undefined,
         },
       })
       if (myId !== requestId.current) return // a newer request superseded this one
@@ -109,7 +111,7 @@ export default function Listing({ mine = false }) {
     } finally {
       if (myId === requestId.current) setLoading(false)
     }
-  }, [slug, urlQ, ordering, dates.from, dates.to, stockIn, pickup, mine])
+  }, [slug, urlQ, ordering, dates.from, dates.to, stockIn, pickup, mine, sub])
 
   useEffect(() => { load(1, true) }, [load])
 
@@ -141,10 +143,10 @@ export default function Listing({ mine = false }) {
     if (value) next.set(key, value); else next.delete(key)
     setParams(next, { replace: true })
   }
-  const sellFiltersActive = stockIn || Boolean(pickup)
+  const sellFiltersActive = stockIn || Boolean(pickup) || Boolean(sub)
   const clearAllFilters = () => {
     const next = new URLSearchParams(params)
-    ;['stock', 'pickup', ...DATE_PARAMS].forEach((k) => next.delete(k))
+    ;['stock', 'pickup', 'sub', ...DATE_PARAMS].forEach((k) => next.delete(k))
     if (['newest', 'upcoming'].includes(next.get('ordering'))) next.delete('ordering')
     setParams(next, { replace: true })
   }
@@ -218,6 +220,16 @@ export default function Listing({ mine = false }) {
       </div>
 
       <div className="filter-row" aria-label="Filters">
+        {subcats.length > 0 && (
+          <label className={`filter-pill ${sub ? 'on' : ''}`}>
+            <Shapes size={15} aria-hidden="true" />
+            <span className="sr-only">Subcategory</span>
+            <select value={sub} onChange={(e) => setParam('sub', e.target.value)}>
+              <option value="">All {category.name}</option>
+              {subcats.map((sc) => <option key={sc.id} value={sc.id}>{sc.name}</option>)}
+            </select>
+          </label>
+        )}
         <label className="filter-pill">
           <ArrowUpDown size={15} aria-hidden="true" />
           <span className="sr-only">Sort by</span>

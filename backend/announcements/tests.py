@@ -1136,3 +1136,76 @@ class CategoryEditAndDeleteForeverTests(BaseCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn('erased automatically', r.data['detail'])
         self.assertTrue(Announcement.objects.filter(pk=theirs.pk).exists())
+
+
+class SubcategoryTests(BaseCase):
+    def setUp(self):
+        super().setUp()
+        self.mine = Category.objects.create(name='Clubs', slug='clubs', icon='music', created_by=self.user)
+        self.bob = APIClient()
+        self.bob.force_authenticate(User.objects.create_user('bob', password=PW))
+
+    def subs(self, cat):
+        return [s['name'] for s in self.client.get(f'/api/categories/{cat.id}/').data['subcategories']]
+
+    def test_original_categories_have_starters(self):
+        data = {c['slug']: [s['name'] for s in c['subcategories']] for c in self.client.get('/api/categories/').data}
+        self.assertEqual(data['food-drinks'], ['Meals', 'Snacks', 'Drinks', 'Desserts', 'Pre-orders'])
+        self.assertIn('Internships', data['opportunities'])
+        self.assertEqual(data['clubs'], [])
+
+    def test_create_category_with_subcategories(self):
+        r = self.client.post('/api/categories/', {'name': 'Sports', 'icon': 'dumbbell', 'color': 'teal',
+                                                  'subcategories': ['Futsal', {'name': ' Badminton '}]}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual([s['name'] for s in r.data['subcategories']], ['Futsal', 'Badminton'])
+
+    def test_creator_syncs_subcategories_and_posts_lose_deleted_one(self):
+        self.client.patch(f'/api/categories/{self.mine.id}/', {'subcategories': ['Music', 'Dance', 'Drama']}, format='json')
+        subs = self.client.get(f'/api/categories/{self.mine.id}/').data['subcategories']
+        music, dance = subs[0]['id'], subs[1]['id']
+        post = self.make(category=self.mine, subcategory_id=dance)
+        r = self.client.patch(f'/api/categories/{self.mine.id}/',
+                              {'subcategories': [{'id': music, 'name': 'Music & Bands'}, {'name': 'Film'}]}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual([s['name'] for s in r.data['subcategories']], ['Music & Bands', 'Film'])
+        self.assertEqual(r.data['subcategories'][0]['id'], music)  # renamed, same id
+        post.refresh_from_db()
+        self.assertIsNone(post.subcategory_id)
+        self.assertEqual(Announcement.objects.filter(pk=post.pk).count(), 1)  # the post itself stays
+
+    def test_subcategory_validation_and_permissions(self):
+        url = f'/api/categories/{self.mine.id}/'
+        self.assertEqual(self.client.patch(url, {'subcategories': ['Art', 'art']}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'subcategories': ['x']}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'subcategories': [f'Sub {i}' for i in range(13)]}, format='json').status_code, 400)
+        self.assertEqual(self.bob.patch(url, {'subcategories': ['Hacked']}, format='json').status_code, 403)
+        self.assertEqual(self.client.patch(f'/api/categories/{self.cat.id}/', {'subcategories': []}, format='json').status_code, 403)
+        self.assertEqual(self.subs(self.mine), [])
+        self.assertEqual(len(self.subs(self.cat)), 5)
+
+    def test_post_with_subcategory_and_filter(self):
+        desserts = self.cat.subcategories.get(name='Desserts')
+        drinks = self.cat.subcategories.get(name='Drinks')
+        a = self.client.post('/api/announcements/', self.payload(title='Kuih lapis', subcategory=desserts.id), format='json')
+        self.assertEqual((a.status_code, a.data['subcategory_name']), (201, 'Desserts'), a.data)
+        self.client.post('/api/announcements/', self.payload(title='Teh tarik', subcategory=drinks.id), format='json')
+        self.client.post('/api/announcements/', self.payload(title='No sub'), format='json')
+        self.assertEqual(self.public_titles(f'/api/announcements/?category=food-drinks&sub={desserts.id}'), ['Kuih lapis'])
+        self.assertEqual(len(self.public_titles('/api/announcements/?category=food-drinks')), 3)
+
+    def test_subcategory_must_match_category(self):
+        workshops = self.other_cat.subcategories.get(name='Workshops')
+        r = self.client.post('/api/announcements/', self.payload(subcategory=workshops.id), format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('not part of Food & Drinks', r.data['subcategory'][0])
+
+    def test_moving_category_drops_subcategory_and_blank_clears(self):
+        snacks = self.cat.subcategories.get(name='Snacks')
+        pk = self.client.post('/api/announcements/', self.payload(subcategory=snacks.id), format='json').data['id']
+        r = self.client.patch(f'/api/announcements/{pk}/', {'category': self.other_cat.id}, format='json')
+        self.assertEqual((r.status_code, r.data['subcategory']), (200, None))
+        r = self.client.patch(f'/api/announcements/{pk}/', {'category': self.cat.id, 'subcategory': snacks.id}, format='json')
+        self.assertEqual(r.data['subcategory_name'], 'Snacks')
+        r = self.client.patch(f'/api/announcements/{pk}/', {'subcategory': ''}, format='multipart')
+        self.assertEqual((r.status_code, r.data['subcategory']), (200, None))

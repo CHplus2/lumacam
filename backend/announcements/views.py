@@ -42,7 +42,7 @@ def not_expired_q(today, prefix=''):
 
 def public_queryset():
     today = timezone.localdate()
-    return (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
+    return (Announcement.objects.select_related('category', 'subcategory').prefetch_related('pickup_locations')
             .filter(status=Announcement.Status.APPROVED, category__is_removed=False)
             .filter(not_expired_q(today)))
 
@@ -97,7 +97,7 @@ class CategoryListView(generics.ListCreateAPIView):
         today = timezone.localdate()
         live = Q(announcements__status=Announcement.Status.APPROVED) & not_expired_q(today, 'announcements__')
         # Meta.ordering is ignored on aggregate queries, so order explicitly.
-        return (Category.objects.filter(is_removed=False)
+        return (Category.objects.filter(is_removed=False).prefetch_related('subcategories')
                 .annotate(announcement_count=Count('announcements', filter=live))
                 .order_by('sort_order', 'name'))
 
@@ -110,7 +110,7 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-    queryset = Category.objects.filter(is_removed=False)
+    queryset = Category.objects.filter(is_removed=False).prefetch_related('subcategories')
     throttle_scope = 'modify'
 
     def get_throttles(self):
@@ -158,6 +158,8 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
         qs = public_queryset()
         if p.get('category'):
             qs = qs.filter(category__slug=p['category'])
+        if str(p.get('sub', '')).isdigit():
+            qs = qs.filter(subcategory_id=int(p['sub']))
         if p.get('mine') == '1':  # "My posts"
             qs = qs.filter(publisher=self.request.user) if self.request.user.is_authenticated else qs.none()
         # Several categories at once (used by "followed categories" notifications).

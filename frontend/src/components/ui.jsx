@@ -70,12 +70,12 @@ export function ErrorBox({ message, onRetry }) {
   )
 }
 
-export function CategoryBadge({ category }) {
+export function CategoryBadge({ category, sub }) {
   if (!category) return null
   const Icon = ICONS[category.icon]
   return (
     <span className={`badge tone-${category.color}`}>
-      {Icon && <Icon size={13} />}{category.name}
+      {Icon && <Icon size={13} />}{category.name}{sub && <span className="badge-sub">· {sub}</span>}
     </span>
   )
 }
@@ -144,7 +144,7 @@ export function AnnouncementCard({ a, to, footer }) {
         </div>
         <div className="ann-body">
           <div className="ann-badges">
-            <CategoryBadge category={a.category_detail} />
+            <CategoryBadge category={a.category_detail} sub={a.subcategory_name} />
             {a.event_start && <EventBadge start={a.event_start} end={a.event_end} />}
           </div>
           <h3 className="ann-title">{a.title}</h3>

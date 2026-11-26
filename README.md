@@ -78,6 +78,10 @@ Platforms: Chrome/Edge/Firefox on Android and desktop work directly. On iPhone/i
 
 The VAPID key pair is generated on first use and stored in the database (`PushKeys`), so no setup is needed. To use your own, set `VAPID_PUBLIC_KEY` (base64url) and `VAPID_PRIVATE_KEY` (PEM). Changing keys invalidates existing subscriptions.
 
+### Subcategories
+
+Each category can have up to 12 subcategories (e.g. Food & Drinks: Meals, Snacks, Drinks, Desserts, Pre-orders). The category's creator adds, renames and removes them in the **Create / Edit category** form; the original six start with a set added by migration `0014` and are changed in `/django-admin/` (Categories > inline Subcategories). Each post picks at most one (optional). On a category page, the first dropdown in the filter row filters by subcategory (`?sub=<id>`), and opening a category still shows all its posts straight away. Removing a subcategory keeps its posts, just without that label; moving a post to another category drops its subcategory.
+
 ### Selling categories
 
 Categories with `sells_items` (Food & Drinks and Student Marketplace, or any new category with "People sell food or items here" ticked) add two things to their posts:
@@ -128,9 +132,9 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 | `GET /auth/me/`, `POST /auth/logout/`, `/auth/claim/` | need `Authorization: Token <key>` |
 | `GET /categories/` | with live announcement counts and `can_delete` for the creator |
 | `POST /categories/` | `name`, `description`, `icon`, `color`, `sells_items`; live immediately, rate limited |
-| `PATCH /categories/:id/` | creator only; name, description, icon, colour, `sells_items` (slug stays) |
+| `PATCH /categories/:id/` | creator only; name, description, icon, colour, `sells_items`, `subcategories` (`[{id?, name}]`, synced; slug stays) |
 | `DELETE /categories/:id/` | only when the category has no posts (else 400); moves it to the Trash |
-| `GET /announcements/?category=&search=&date_from=&date_to=&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day. Selling categories: `stock=in` hides out-of-stock posts, `pickup=<name>` filters by pickup place |
+| `GET /announcements/?category=&search=&date_from=&date_to=&sub=<subcategory id>&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day. Selling categories: `stock=in` hides out-of-stock posts, `pickup=<name>` filters by pickup place |
 | `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; in selling categories `availability` (`available`/`limited`/`out`) and `pickup_locations` (list, or a JSON string in multipart, max 5); live immediately, rate limited |
 | `GET /announcements/:id/` | |
 | `PATCH /announcements/:id/` | only the publisher's account (401 when logged out, 403 for others); multipart or JSON; `remove_image=true` drops the image; rate limited |

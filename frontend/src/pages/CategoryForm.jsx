@@ -5,7 +5,7 @@ import { CategoryCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { CategoryFields } from '../components/fields'
 import { emptyCategory } from '../utils'
 
-const EDITABLE = ['name', 'description', 'icon', 'color', 'sells_items']
+const EDITABLE = ['name', 'description', 'icon', 'color', 'sells_items', 'subcategories']
 
 export default function CategoryForm() {
   const { id } = useParams()
