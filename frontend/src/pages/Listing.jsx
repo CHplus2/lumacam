@@ -5,6 +5,7 @@ import api, { parseError } from '../api'
 import { useCategories, useDebounced } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import TrashNotice from '../components/TrashNotice'
+import ExpandableText from '../components/ExpandableText'
 import { useFollows } from '../follows'
 import { ICONS, TRASH_DAYS, categoryDeleteBlocker, fmtEventRange, quickRange, todayISO } from '../utils'
 
@@ -187,11 +188,15 @@ export default function Listing({ mine = false }) {
         <div className="grow page-head-text">
           {/* On a category page, wait for the category instead of flashing the Explore title. */}
           <h1>{category ? category.name : slug ? '\u00a0' : mine ? 'My posts' : 'Explore all announcements'}</h1>
-          {!(category && !category.description) && <p className="muted page-head-desc">
-            {category ? category.description : slug ? '\u00a0' : mine
-              ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash" data-tour="trash">Trash</Link>.</>
-              : 'Browse everything shared by your campus community.'}
-          </p>}
+          {category?.description ? (
+            <ExpandableText key={category.slug} text={category.description} className="muted page-head-desc" />
+          ) : !category && (
+            <p className="muted page-head-desc">
+              {slug ? '\u00a0' : mine
+                ? <>Everything you&apos;ve posted. Only you can edit these. Deleted posts are in your <Link to="/trash" data-tour="trash">Trash</Link>.</>
+                : 'Browse everything shared by your campus community.'}
+            </p>
+          )}
         </div>
         {category && (
           <button type="button" data-tour="follow" className={`btn btn-sm ${following ? '' : 'btn-primary'}`} aria-pressed={following}
