@@ -14,3 +14,8 @@ export function replayGuide() {
   try { localStorage.removeItem(WELCOME_KEY); localStorage.removeItem(TOURS_KEY) } catch { /* ignore */ }
   window.location.assign('/')
 }
+
+// The "What are you into?" picker: once per device, whether it came with the welcome or after sign-up.
+const PICKER_KEY = 'lumacam.picker.v1'
+export const pickerSeen = () => get(PICKER_KEY, 0) === 1
+export const markPicker = () => set(PICKER_KEY, 1)

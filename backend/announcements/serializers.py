@@ -253,6 +253,15 @@ class AnnouncementSerializer(serializers.ModelSerializer):
     def get_image_url(self, obj):
         return obj.image.url if obj.image else None
 
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        # Phone numbers and emails are personal: guests sign in to see them, so scrapers can't
+        # harvest them from the public API. Links (forms, sign-up pages) stay public.
+        user = getattr(self.context.get('request'), 'user', None)
+        if data.get('contact_method') in ('whatsapp', 'email') and not getattr(user, 'is_authenticated', False):
+            data['contact_info'] = ''
+        return data
+
     # ---- validation ----
     def validate_publisher_name(self, value):
         value = value.strip()

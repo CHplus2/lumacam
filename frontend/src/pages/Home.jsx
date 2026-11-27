@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, CalendarDays, Plus, Search } from 'lucide-react'
-import api, { parseError } from '../api'
+import { ArrowRight, CalendarDays, Plus, Search, Sparkles } from 'lucide-react'
+import api, { parseError, track } from '../api'
 import { useCategories } from '../hooks'
 import { AnnouncementCard, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import ViewToggle, { PostList } from '../components/ViewToggle'
+import Onboarding from '../components/Onboarding'
+import { useFollows } from '../follows'
 import { ICONS, fmtEventRange, quickRange } from '../utils'
 
-// Home is built for "what's new": search, one row of categories, then the latest
-// posts, so new posts are on screen without scrolling. Upcoming events sit below
-// as a compact list.
+// Home is built for "what's new": search, one row of categories, "For you" (posts from what
+// you follow), then the latest posts. Upcoming events sit below as a compact list.
 export default function Home() {
   const navigate = useNavigate()
   const [q, setQ] = useState('')
@@ -19,6 +20,20 @@ export default function Home() {
   const [error, setError] = useState('')
   const [upcoming, setUpcoming] = useState([])
   const [upcomingCount, setUpcomingCount] = useState(0)
+  const { slugs } = useFollows()
+  const followKey = slugs.join(',')
+  const [forYou, setForYou] = useState(null) // null while loading
+  const [picking, setPicking] = useState(false)
+
+  // Refetch when follows change, so a fresh pick shows its posts straight away. Logged-in
+  // devices hold a copy of the account's follows; with none here the server uses the account's.
+  useEffect(() => {
+    let alive = true
+    api.get('/announcements/for-you/', { params: followKey ? { categories: followKey } : {} })
+      .then(({ data }) => { if (alive) setForYou(data.results) })
+      .catch(() => { if (alive) setForYou([]) })
+    return () => { alive = false }
+  }, [followKey])
 
   useEffect(() => {
     api.get('/announcements/', { params: { ordering: 'newest' } })
@@ -68,6 +83,29 @@ export default function Home() {
           </div>
         )}
       </nav>
+
+      <section>
+        <div className="section-head">
+          <div>
+            <h2><Sparkles size={20} className="inline" /> For you</h2>
+            <p className="muted section-hint">Based on what you follow</p>
+          </div>
+          {forYou?.length > 0 && (
+            <button type="button" className="link-more btn-link" onClick={() => setPicking(true)}>Change interests</button>
+          )}
+        </div>
+        {forYou === null ? <Spinner /> : forYou.length === 0 ? (
+          <EmptyState mood="curious" title={followKey ? 'Nothing new in what you follow' : 'Pick your interests'}
+            text={followKey ? 'Follow a few more categories to see more here.' : "Tell me what you're into and I'll pick posts for you"}
+            action={<button type="button" className="btn btn-primary" onClick={() => setPicking(true)}>Choose interests</button>} />
+        ) : (
+          // Count opens from this row for the evidence table.
+          <div onClickCapture={(e) => { if (e.target.closest('a')) track('for_you_opened') }}>
+            <PostList>{forYou.map((a) => <AnnouncementCard key={a.id} a={a} />)}</PostList>
+          </div>
+        )}
+        {picking && <Onboarding pickOnly onClose={() => setPicking(false)} />}
+      </section>
 
       <section>
         <div className="section-head">

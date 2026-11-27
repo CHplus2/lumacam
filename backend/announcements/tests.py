@@ -1059,6 +1059,124 @@ class SeedDemoAdminTests(APITestCase):
         self.assertTrue(admin.check_password('Env-pass-2026!'))
 
 
+class GuestContactTests(BaseCase):
+    """Phone numbers and emails are only shown to signed-in students (stops scraping)."""
+
+    def test_guest_sees_no_phone_or_email_but_keeps_links(self):
+        wa = self.make()
+        mail = self.make(contact_method='email', contact_info='seller@example.com')
+        link = self.make(contact_method='link', contact_info='https://forms.gle/abc')
+        guest = APIClient()
+        for post, want in ((wa, ''), (mail, ''), (link, 'https://forms.gle/abc')):
+            self.assertEqual(guest.get(f'/api/announcements/{post.id}/').data['contact_info'], want)
+        listed = {p['id']: p['contact_info'] for p in guest.get('/api/announcements/').data['results']}
+        self.assertEqual(listed[wa.id], '')
+        # Any signed-in student sees it, not only the owner.
+        bob = APIClient(); bob.force_authenticate(User.objects.create_user('bob', password=PW))
+        self.assertEqual(bob.get(f'/api/announcements/{wa.id}/').data['contact_info'], '60123456789')
+
+
+class DeleteAccountTests(BaseCase):
+    """Users can erase their account and posts themselves."""
+
+    def test_wrong_password_keeps_everything(self):
+        self.make()
+        self.assertEqual(self.client.delete('/api/auth/me/', {'password': 'nope'}).status_code, 400)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+        self.assertEqual(Announcement.objects.count(), 1)
+
+    def test_deletes_account_posts_images_and_token(self):
+        bob = User.objects.create_user('bob', password=PW)
+        theirs = self.make(publisher=bob)
+        mine = self.make(image=image_file())
+        self.make(status='removed')  # posts in the Trash go too
+        stored = mine.image.name
+        self.assertEqual(self.client.delete('/api/auth/me/', {'password': PW}).status_code, 204)
+        self.assertFalse(User.objects.filter(username='alice').exists())
+        self.assertEqual(list(Announcement.objects.values_list('id', flat=True)), [theirs.id])
+        self.assertFalse(StoredFile.objects.filter(name=stored).exists())
+
+
+class AiAutofillTests(BaseCase):
+    """Paste-to-post with DeepSeek mocked out: the AI only ever suggests clean, known fields."""
+    CATS = {'food-drinks': 'Food & Drinks', 'marketplace': 'Student Marketplace'}
+
+    def test_clean_keeps_only_valid_fields(self):
+        from announcements.ai_fill import _clean
+        out = _clean({
+            'title': '  Nasi lemak  ', 'category': 'food-drinks', 'event_start': '2026-11-28',
+            'event_end': '2026-11-27', 'pickup_locations': ['Block C lobby', 'x', 3],
+            'contact_method': 'whatsapp', 'contact_info': '+60 12-345 6789', 'price': 'RM6', 'hack': '<b>',
+        }, self.CATS)
+        self.assertEqual(out, {'title': 'Nasi lemak', 'category': 'food-drinks', 'event_start': '2026-11-28',
+                               'pickup_locations': ['Block C lobby'], 'contact_method': 'whatsapp',
+                               'contact_info': '60123456789'})
+
+    def test_clean_rejects_unknown_category_bad_date_and_bad_contact(self):
+        from announcements.ai_fill import _clean
+        out = _clean({'title': 'Talk', 'category': 'nope', 'event_start': 'Friday',
+                      'contact_method': 'email', 'contact_info': 'not-an-email'}, self.CATS)
+        self.assertEqual(out, {'title': 'Talk'})
+        self.assertIsNone(_clean([1, 2], self.CATS))
+        self.assertIsNone(_clean({}, self.CATS))
+
+    def run_autofill(self, reply=None, error=None, key='test-key'):
+        import os
+        from unittest import mock
+        from announcements import ai_fill
+        def fake_call(system, user, timeout):
+            if error:
+                raise error
+            return reply, {'prompt_tokens': 10, 'completion_tokens': 5}
+        with mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': key} if key else {}, clear=False), \
+                mock.patch.object(ai_fill, '_call', side_effect=fake_call):
+            if not key:
+                os.environ.pop('DEEPSEEK_API_KEY', None)
+            return ai_fill.autofill('Nasi lemak RM6, Block C lobby, WhatsApp 0123456789', self.CATS)
+
+    def test_autofill_good_blank_timeout_and_off(self):
+        good = self.run_autofill(reply='{"title": "Nasi lemak", "category": "food-drinks"}')
+        self.assertEqual(good, {'title': 'Nasi lemak', 'category': 'food-drinks'})
+        self.assertIsNone(self.run_autofill(reply='   '))           # DeepSeek's known blank-JSON reply
+        self.assertIsNone(self.run_autofill(error=TimeoutError()))  # slow or busy
+        self.assertIsNone(self.run_autofill(reply='{"title": "x"}', key=''))  # no key = switched off
+
+    def test_endpoint(self):
+        import os
+        from unittest import mock
+        from announcements import ai_fill
+        with mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'test-key'}):
+            self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': True})
+            self.assertEqual(APIClient().post('/api/ai/autofill/', {'text': 'hi'}, format='json').status_code, 401)
+            self.assertEqual(self.client.post('/api/ai/autofill/', {'text': '  '}, format='json').status_code, 400)
+            with mock.patch.object(ai_fill, 'autofill', return_value={'title': 'Nasi lemak'}) as fake:
+                r = self.client.post('/api/ai/autofill/', {'text': 'Nasi lemak RM6'}, format='json')
+            self.assertEqual(r.data, {'ok': True, 'fields': {'title': 'Nasi lemak'}})
+            self.assertIn('food-drinks', fake.call_args.args[1])  # real categories are passed in
+            with mock.patch.object(ai_fill, 'autofill', return_value=None):
+                self.assertFalse(self.client.post('/api/ai/autofill/', {'text': 'x'}, format='json').data['ok'])
+        os.environ.pop('DEEPSEEK_API_KEY', None)
+        self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': False})
+        self.assertEqual(self.client.post('/api/ai/autofill/', {'text': 'x'}, format='json').status_code, 503)
+
+
+class AiRetryTests(BaseCase):
+    def test_retries_once_after_a_failed_try(self):
+        import os
+        from unittest import mock
+        from announcements import ai_fill
+        replies = iter([TimeoutError(), ('{"title": "Lost umbrella"}', {})])
+        def fake_call(system, user, timeout):
+            r = next(replies)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        with mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'test-key'}), mock.patch.object(ai_fill, '_call', side_effect=fake_call) as call:
+            out = ai_fill.autofill('Lost black umbrella', {'other': 'Other'})
+        self.assertEqual(out, {'title': 'Lost umbrella'})
+        self.assertEqual(call.call_count, 2)
+
+
 class CategoryEditAndDeleteForeverTests(BaseCase):
     def setUp(self):
         super().setUp()
@@ -1289,3 +1407,72 @@ class AccountPrefsTests(BaseCase):
         self.assertEqual(c.post('/api/auth/logout/').status_code, 204)
         self.assertEqual(list(PushSubscription.objects.values_list('endpoint', flat=True)), [self.FCM + 'anon'])
 
+
+
+class ForYouTests(BaseCase):
+    """Home's "For you" row: followed +3, event in the next 7 days +2, posted in the last 3 days +1."""
+    URL = '/api/announcements/for-you/'
+
+    def aged(self, days, **kw):
+        post = self.make(**kw)
+        Announcement.objects.filter(pk=post.pk).update(created_at=timezone.now() - timedelta(days=days))
+        return post
+
+    def titles(self, client, url=URL):
+        return [p['title'] for p in client.get(url).data['results']]
+
+    def test_ranking_order(self):
+        today = timezone.localdate()
+        self.aged(10, title='Old food')                                            # 3
+        self.aged(1, title='New food')                                             # 3 + 1
+        self.aged(10, title='Soon food', event_start=today + timedelta(days=2))    # 3 + 2
+        self.aged(1, title='Soon new food', event_start=today + timedelta(days=5))  # 3 + 2 + 1
+        self.aged(1, title='Later food', event_start=today + timedelta(days=20))   # 3 + 1, older than New food
+        Announcement.objects.filter(title='Later food').update(created_at=timezone.now() - timedelta(days=2))
+        self.aged(0, title='Not followed', category=self.other_cat)
+        self.assertEqual(self.titles(APIClient(), self.URL + '?categories=food-drinks'),
+                         ['Soon new food', 'Soon food', 'New food', 'Later food', 'Old food'])
+
+    def test_expired_and_removed_left_out(self):
+        today = timezone.localdate()
+        self.make(title='Live')
+        self.make(title='Removed', status='removed')
+        self.make(title='Expired', expires_at=today - timedelta(days=1))
+        self.make(title='Past event', event_start=today - timedelta(days=3))
+        self.assertEqual(self.titles(APIClient(), self.URL + '?categories=food-drinks'), ['Live'])
+
+    def test_logged_in_uses_account_follows(self):
+        from announcements.models import NotificationPrefs
+        self.make(title='Food'); self.make(title='Event', category=self.other_cat)
+        NotificationPrefs.objects.create(user=self.user).categories.set([self.other_cat])
+        self.assertEqual(self.titles(self.client), ['Event'])  # e.g. a new device, nothing saved there yet
+        self.assertEqual(self.titles(APIClient()), [])          # guests have no account to fall back on
+
+    def test_no_follows_says_no_interests(self):
+        self.make()
+        self.assertEqual(APIClient().get(self.URL).data, {'results': [], 'reason': 'no_interests'})
+        self.assertEqual(self.client.get(self.URL).data['reason'], 'no_interests')
+
+    def test_guests_never_see_contact_details(self):
+        self.make(title='Phone'); self.make(title='Mail', contact_method='email', contact_info='s@example.com')
+        rows = APIClient().get(self.URL + '?categories=food-drinks').data['results']
+        self.assertEqual([r['contact_info'] for r in rows], ['', ''])
+        self.assertTrue(all(r['contact_info'] for r in self.client.get(self.URL + '?categories=food-drinks').data['results']))
+
+    def test_limit(self):
+        for i in range(12):
+            self.make(title=f'Post {i}')
+        self.assertEqual(len(self.titles(APIClient(), self.URL + '?categories=food-drinks')), 10)
+
+
+class UsageCountTests(BaseCase):
+    def test_counts_known_events_only(self):
+        from django.core.management import call_command
+        from announcements.models import UsageCount
+        guest = APIClient()
+        self.assertEqual(guest.post('/api/usage/', {'event': 'picker_completed'}).status_code, 204)
+        guest.post('/api/usage/', {'event': 'picker_completed'})
+        self.assertEqual(guest.post('/api/usage/', {'event': 'drop table'}).status_code, 400)
+        self.assertEqual(UsageCount.objects.get(name='picker_completed').count, 2)
+        out = io.StringIO(); call_command('usage_counts', stdout=out)
+        self.assertIn('picker_completed', out.getvalue())

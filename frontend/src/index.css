@@ -135,6 +135,16 @@ label { font-weight: 600; font-size: 0.9rem; }
 .share-bar { display: flex; flex-wrap: wrap; gap: 8px; }
 .share-bar.big { width: 100%; }
 .share-bar.big .btn { flex: 1 1 160px; min-height: 48px; }
+.ai-paste { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px; background: #f4f3ff; border: 1px solid #dcd9fb; }
+.ai-paste-head { display: flex; align-items: center; gap: 12px; }
+.ai-paste-head .lumi { margin: 0; flex: none; }
+.ai-paste-head p { margin: 2px 0 0; }
+.ai-paste textarea { width: 100%; box-sizing: border-box; background: var(--surface); }
+.ai-paste-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ai-note { margin: 0; }
+.ai-note.ok { color: #166534; }
+.ai-note.err { color: #b42318; }
+.ai-filled { background: #f5f3ff !important; border-color: #a5b4fc !important; }
 .btn-whatsapp { background: #15803d; border-color: #15803d; color: #ffffff; }
 .btn-whatsapp:hover { background: #166534; border-color: #166534; color: #ffffff; text-decoration: none; }
 .lumi { display: block; height: auto; margin: 0 auto; }
@@ -567,8 +577,51 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
   * { transition: none !important; animation-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
+/* Privacy and rules page: key facts first, details as tap-to-open questions */
+.legal { max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
+.legal h2 { font-size: 1.05rem; margin: 10px 0 0; }
+.legal h3 { font-size: 0.95rem; margin: 0 0 8px; }
+.legal ul { list-style: none; margin: 0; padding: 0; }
+.legal-head { display: flex; align-items: center; gap: 12px; }
+.legal-head h1 { margin: 0; font-size: 1.4rem; }
+.legal-head p { margin: 2px 0 0; }
+.lang-switch { margin-left: auto; display: flex; border: 1px solid var(--border); border-radius: 999px; padding: 3px; background: var(--surface); }
+.lang-switch button { border: 0; background: none; padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 0.8rem; font-weight: 600; color: var(--muted); cursor: pointer; }
+.lang-switch button[aria-pressed="true"] { background: var(--primary); color: #fff; }
+.legal .legal-glance { padding: 6px 16px; }
+.legal-glance li { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-weight: 500; }
+.legal-glance li + li { border-top: 1px solid var(--border); }
+.legal-glance svg { color: var(--primary); flex: none; }
+.legal-faq details + details { border-top: 1px solid var(--border); }
+.legal-faq summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; font-weight: 600; cursor: pointer; }
+.legal-faq summary::-webkit-details-marker { display: none; }
+.legal-faq summary svg { flex: none; color: var(--muted); transition: transform 0.2s; }
+.legal-faq details[open] summary svg { transform: rotate(180deg); }
+.legal-faq details > :not(summary) { margin: 0; padding: 0 16px 14px; line-height: 1.55; }
+.legal-faq details > p:not(:last-child) { padding-bottom: 6px; }
+.data-list { display: grid; gap: 12px; }
+.data-list li { display: grid; grid-template-columns: 18px 1fr; gap: 4px 12px; align-items: start; }
+.data-list li > svg { color: var(--primary); margin-top: 2px; }
+.data-list li div { display: grid; gap: 2px; }
+.data-need { grid-column: 2; justify-self: start; font-size: 0.75rem; font-weight: 600; color: var(--primary-dark); background: #eef2ff; border-radius: 999px; padding: 2px 8px; }
+.legal-rules { padding: 16px; display: grid; gap: 6px; }
+.banned { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px !important; }
+.banned li { display: inline-flex; align-items: center; gap: 5px; font-size: 0.85rem; padding: 5px 10px; border-radius: 999px; background: #fff5f5; color: var(--danger); border: 1px solid #fecaca; }
+.safe { display: grid; gap: 8px; }
+.safe li { padding-left: 14px; position: relative; line-height: 1.5; }
+.safe li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+.delete-account { padding: 16px; display: grid; gap: 8px; margin-top: 10px; }
+.delete-account h2 { margin: 0; color: var(--danger); }
+.delete-account p { margin: 0; }
+.delete-account .btn { justify-self: start; }
+.footer a { margin-left: 8px; }
+@media (prefers-reduced-motion: reduce) { .legal-faq summary svg { transition: none; } }
 /* Reduced motion shortens animations site-wide; the toast fade is only an opacity
    timer, so keep its 5 seconds instead of letting messages vanish instantly. */
 @media (prefers-reduced-motion: reduce) {
   .toast-fade { animation-duration: 5s !important; }
 }
+
+/* "For you" on Home: hint under the heading; "Change interests" looks like the other row links */
+.section-head h2 + .section-hint { margin: 2px 0 0; font-size: 0.85rem; }
+.btn-link { border: 0; background: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; }

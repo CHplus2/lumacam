@@ -241,3 +241,20 @@ class NotificationPrefs(models.Model):
     def __str__(self):
         return f'Notification prefs for {self.user}'
 
+
+
+class UsageCount(models.Model):
+    """Daily tallies for the judges' evidence. Numbers only: never post text or who did it."""
+    name = models.CharField(max_length=40)
+    day = models.DateField()
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['name', 'day'], name='one_count_per_name_per_day')]
+
+    @classmethod
+    def bump(cls, name, by=1):
+        from django.db.models import F
+        from django.utils import timezone
+        row, _ = cls.objects.get_or_create(name=name, day=timezone.localdate())
+        cls.objects.filter(pk=row.pk).update(count=F('count') + by)  # atomic across instances

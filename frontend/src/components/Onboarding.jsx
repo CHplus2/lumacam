@@ -4,7 +4,8 @@ import { useCategories } from '../hooks'
 import { useFollows } from '../follows'
 import { Lumi } from './ui'
 import { ICONS } from '../utils'
-import { finishWelcome, markTour, tourSeen, welcomeDone } from '../guide'
+import { finishWelcome, markPicker, markTour, tourSeen, welcomeDone } from '../guide'
+import { track } from '../api'
 
 // One short tour per screen. `sel` is a CSS selector; the first VISIBLE match is used, so the
 // same tour works with the phone bottom bar and the desktop header. Missing targets are skipped.
@@ -28,6 +29,7 @@ const TOURS = {
     { sel: '.contact-box', mood: 'happy', title: 'Get in touch', text: 'Contact the seller or open the sign-up form from here.' },
   ],
   create: [
+    { sel: '.ai-paste', mood: 'found', title: 'Already posted it on WhatsApp?', text: "Paste the message here and I'll fill in the form. You check it before posting." },
     { sel: '#title', mood: 'curious', title: 'Start with a clear title', text: 'Say what it is, like "Preloved denim jacket, size M".' },
     { sel: '#category', mood: 'found', title: 'Pick a category', text: 'This decides who sees it and who gets notified.' },
     { sel: '#contact_method', mood: 'love', title: 'How should people reach you?', text: 'WhatsApp is quickest for most students.' },
@@ -151,16 +153,22 @@ export function PageTour({ id }) {
 /**
  * First visit to Home: a full-screen Lumi welcome (Duolingo-style), then an optional spotlight
  * tour of the real buttons. Shown once per device; never over a shared post link.
+ * `pickOnly` shows just the "What are you into?" screen (after sign-up, or from Home's For you).
  */
-export default function Onboarding() {
-  const [phase, setPhase] = useState(() => (welcomeDone() ? 'done' : 'welcome'))
+export default function Onboarding({ pickOnly = false, onClose }) {
+  const [phase, setPhase] = useState(() => (pickOnly || !welcomeDone() ? 'welcome' : 'done'))
   const [step, setStep] = useState(0)
   const { categories } = useCategories()
   const follows = useFollows()
   const nextBtn = useRef(null)
   const picked = categories.filter((c) => follows.isFollowing(c.slug)).length
 
-  const close = useCallback(() => { finishWelcome(); markTour('home'); setPhase('done') }, [])
+  // Counted once per device, as "completed" (picked something) or "skipped".
+  const leavePick = () => { markPicker(); track(picked ? 'picker_completed' : 'picker_skipped') }
+  const close = useCallback(() => {
+    if (pickOnly) { onClose?.() } else { finishWelcome(); markTour('home') }
+    setPhase('done')
+  }, [pickOnly, onClose])
   const startTour = () => { finishWelcome(); setPhase('tour') }
   useLockScroll(phase === 'welcome', close)
   useEffect(() => { if (phase === 'welcome') nextBtn.current?.focus() }, [phase, step])
@@ -168,12 +176,13 @@ export default function Onboarding() {
   if (phase === 'done') return null
   if (phase === 'tour') return <Tour steps={TOURS.home} onDone={close} />
 
-  const steps = [
+  const pickStep = { mood: 'love', title: 'What are you into?', text: "Pick 3 or more. I'll put matching posts at the top of Home.", pick: true }
+  const steps = pickOnly ? [pickStep] : [
     { mood: 'curious', title: "Hi, I'm Lumi!", text: "I'll show you what's happening around campus." },
     { mood: 'found', title: 'Food, preloved finds, events and notices.', text: 'All in one place, posted by students. Look around, no account needed.' },
-    { mood: 'love', title: 'What do you want to hear about?', text: 'Pick a few. I can tell you when something new is posted.', pick: true },
+    pickStep,
     picked
-      ? { mood: 'wink', title: "You're all set!", text: `New posts in your ${picked === 1 ? 'pick' : `${picked} picks`} will show under the bell. Want a quick look around?` }
+      ? { mood: 'wink', title: "You're all set!", text: `Posts from your ${picked === 1 ? 'pick' : `${picked} picks`} show in "For you" on Home, and new ones under the bell. Want a quick look around?` }
       : { mood: 'wink', title: "You're all set!", text: 'You can follow any category later from its page. Want a quick look around?' },
   ]
   const s = steps[step]
@@ -182,7 +191,8 @@ export default function Onboarding() {
   return (
     <div className="onboard" role="dialog" aria-modal="true" aria-labelledby="onboard-title">
       <div className="onboard-top">
-        <button type="button" className="onboard-close" aria-label="Skip the welcome" onClick={close}><X size={24} /></button>
+        <button type="button" className="onboard-close" aria-label={pickOnly ? 'Close' : 'Skip the welcome'}
+          onClick={pickOnly ? () => { leavePick(); close() } : close}><X size={24} /></button>
         <div className="onboard-progress" aria-hidden="true"><span style={{ width: `${((step + 1) / steps.length) * 100}%` }} /></div>
       </div>
 
@@ -215,13 +225,17 @@ export default function Onboarding() {
       </div>
 
       <div className="onboard-actions">
-        {last ? (
+        {pickOnly ? (
+          <button ref={nextBtn} type="button" className="btn btn-primary onboard-next" onClick={() => { leavePick(); close() }}>
+            {picked ? 'Show my posts' : 'Skip for now'}
+          </button>
+        ) : last ? (
           <>
             <button ref={nextBtn} type="button" className="btn btn-primary onboard-next" onClick={startTour}>Show me around</button>
             <button type="button" className="btn onboard-next" onClick={close}>Start exploring</button>
           </>
         ) : (
-          <button ref={nextBtn} type="button" className="btn btn-primary onboard-next" onClick={() => setStep(step + 1)}>
+          <button ref={nextBtn} type="button" className="btn btn-primary onboard-next" onClick={() => { if (s.pick) leavePick(); setStep(step + 1) }}>
             {s.pick && !picked ? 'Skip for now' : 'Continue'}
           </button>
         )}

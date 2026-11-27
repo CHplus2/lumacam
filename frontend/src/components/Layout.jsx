@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Aperture, Bell, BellRing, Compass, FileText, House, LayoutGrid, LogIn, LogOut, Plus, Settings, Trash2,
+  Aperture, Bell, BellRing, Compass, FileText, House, LayoutGrid, LogIn, LogOut, Plus, Settings, Shield, Trash2,
 } from 'lucide-react'
 import api from '../api'
 import { useFollows } from '../follows'
@@ -10,7 +10,7 @@ import { clearAuth, useAuth } from '../auth'
 import { forgetOnLogout, loadAccountPrefs, saveAccountPrefs } from '../accountPrefs'
 import { fmtDate } from '../utils'
 import Onboarding, { PageTour } from './Onboarding'
-import { replayGuide } from '../guide'
+import { replayGuide, welcomeDone } from '../guide'
 
 function Logo() {
   return (
@@ -148,6 +148,7 @@ function AccountMenu() {
           <button type="button" role="menuitem" className="menu-item" onClick={() => go('/trash')}><Trash2 size={16} /> Trash</button>
           <button type="button" role="menuitem" className="menu-item" onClick={() => go('/notifications')}><Settings size={16} /> Notification settings</button>
           <button type="button" role="menuitem" className="menu-item" onClick={replayGuide}><Compass size={16} /> Replay the guide</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => go('/privacy')}><Shield size={16} /> Privacy and account</button>
           <button type="button" role="menuitem" className="menu-item" onClick={() => logOut(false)}><LogOut size={16} /> Log out</button>
           <button type="button" role="menuitem" className="menu-item small muted" onClick={() => logOut(true)}>Log out on all devices</button>
         </div>
@@ -187,7 +188,8 @@ function PushSync() {
 }
 
 export default function Layout() {
-  const { pathname } = useLocation()
+  const { pathname, state } = useLocation()
+  const navigate = useNavigate()
   const { loggedIn } = useAuth()
   // Each main screen has its own short Lumi tour (see Onboarding.jsx).
   const tourId = pathname.startsWith('/category/') || pathname === '/explore' ? 'listing'
@@ -221,10 +223,14 @@ export default function Layout() {
 
       <main className="container main"><Outlet /></main>
       {pathname === '/' && <Onboarding />}
+      {/* Right after sign-up (see AuthPage), unless the Home welcome is about to ask the same. */}
+      {state?.pickInterests && (pathname !== '/' || welcomeDone()) && (
+        <Onboarding pickOnly onClose={() => navigate(pathname, { replace: true, state: null })} />
+      )}
       {tourId && <PageTour key={pathname} id={tourId} />}
 
       <footer className="footer container">
-        <span>LumaCam - campus announcements, organised.</span>
+        <span>LumaCam - campus announcements, organised.</span> <Link to="/privacy">Privacy and rules</Link>
       </footer>
 
       <nav className="nav-mobile" aria-label="Mobile">
