@@ -7,6 +7,8 @@ urlpatterns = [
     path('categories/<int:pk>/', views.CategoryDetailView.as_view()),
     path('announcements/', views.AnnouncementListCreateView.as_view()),
     path('announcements/<int:pk>/', views.AnnouncementDetailView.as_view()),
+    path('announcements/for-you/', views.ForYouView.as_view()),
+    path('usage/', views.UsageView.as_view()),
     path('pickup-locations/', views.PickupLocationListView.as_view()),
     path('ai/autofill/', views.AutofillView.as_view()),
     path('auth/prefs/', views.NotificationPrefsView.as_view()),

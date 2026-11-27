@@ -49,3 +49,6 @@ export function parseError(err) {
 }
 
 export default api
+
+/** Count one app event for the evidence table (numbers only). Never blocks the UI. */
+export const track = (event) => { api.post('/usage/', { event }).catch(() => {}) }

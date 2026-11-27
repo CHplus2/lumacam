@@ -1,7 +1,7 @@
 import logging
-from datetime import date, timezone as dt_timezone
+from datetime import date, timedelta, timezone as dt_timezone
 
-from django.db.models import Count, F, Q
+from django.db.models import Case, Count, F, Q, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.utils import timezone
@@ -17,7 +17,7 @@ from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
 from . import ai_fill, ownership, push
-from .models import Announcement, Category, NotificationPrefs, PickupLocation, PushSubscription
+from .models import Announcement, Category, NotificationPrefs, PickupLocation, PushSubscription, UsageCount
 from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
                           TrashedCategorySerializer)
 from .trash import safe_purge
@@ -198,6 +198,51 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
             push.notify_new_announcement(announcement)
         except Exception:  # notifications must never block posting
             logging.getLogger(__name__).exception('Sending notifications failed.')
+
+
+FOR_YOU_LIMIT = 10
+
+
+class ForYouView(APIView):
+    """Home's "For you" row: posts from what you follow, soonest events and newest posts first.
+
+    Score (one sentence for the judges): followed category +3, event starts in the next 7 days +2,
+    posted in the last 3 days +1; ties go to the newest. Only followed categories are candidates,
+    so the row never shows something you didn't pick. ?categories=slug1,slug2 from this device,
+    else (logged in) the account's follows, so a new device gets the same row.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        # The app sends this device's follows, which mirror the account's once logged in; sending
+        # them avoids racing the debounced save right after a pick. Without them, use the account.
+        slugs = [c for c in request.query_params.get('categories', '').split(',') if c][:50]
+        if not slugs and request.user.is_authenticated:
+            slugs = list(Category.objects.filter(followers__user=request.user).values_list('slug', flat=True))
+        if not slugs:
+            return Response({'results': [], 'reason': 'no_interests'})
+        today, now = timezone.localdate(), timezone.now()
+        score = (Value(3)
+                 + Case(When(event_start__range=(today, today + timedelta(days=7)), then=Value(2)), default=Value(0))
+                 + Case(When(created_at__gte=now - timedelta(days=3), then=Value(1)), default=Value(0)))
+        posts = (public_queryset().filter(category__slug__in=slugs).annotate(score=score)
+                 .order_by('-score', '-created_at', '-id')[:FOR_YOU_LIMIT])
+        data = AnnouncementSerializer(posts, many=True, context={'request': request}).data
+        return Response({'results': data, 'reason': 'interests' if data else 'nothing_new'})
+
+
+class UsageView(APIView):
+    """POST {event}: count one app event for the evidence table. Numbers only, no user or text."""
+    permission_classes = [AllowAny]
+    throttle_scope = 'usage'
+    EVENTS = {'picker_completed', 'picker_skipped', 'for_you_opened'}
+
+    def post(self, request):
+        event = request.data.get('event')
+        if event not in self.EVENTS:
+            raise ValidationError({'event': 'Unknown event.'})
+        UsageCount.bump(event)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):

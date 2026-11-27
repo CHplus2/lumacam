@@ -204,5 +204,6 @@ REST_FRAMEWORK = {
         'category': os.environ.get('CATEGORY_THROTTLE_RATE', '10/hour'),
         'push': os.environ.get('PUSH_THROTTLE_RATE', '60/hour'),
         'ai': os.environ.get('AI_THROTTLE_RATE', '20/hour'),
+        'usage': os.environ.get('USAGE_THROTTLE_RATE', '120/hour'),
     },
 }

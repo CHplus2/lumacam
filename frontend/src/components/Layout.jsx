@@ -10,7 +10,7 @@ import { clearAuth, useAuth } from '../auth'
 import { forgetOnLogout, loadAccountPrefs, saveAccountPrefs } from '../accountPrefs'
 import { fmtDate } from '../utils'
 import Onboarding, { PageTour } from './Onboarding'
-import { replayGuide } from '../guide'
+import { replayGuide, welcomeDone } from '../guide'
 
 function Logo() {
   return (
@@ -188,7 +188,8 @@ function PushSync() {
 }
 
 export default function Layout() {
-  const { pathname } = useLocation()
+  const { pathname, state } = useLocation()
+  const navigate = useNavigate()
   const { loggedIn } = useAuth()
   // Each main screen has its own short Lumi tour (see Onboarding.jsx).
   const tourId = pathname.startsWith('/category/') || pathname === '/explore' ? 'listing'
@@ -222,6 +223,10 @@ export default function Layout() {
 
       <main className="container main"><Outlet /></main>
       {pathname === '/' && <Onboarding />}
+      {/* Right after sign-up (see AuthPage), unless the Home welcome is about to ask the same. */}
+      {state?.pickInterests && (pathname !== '/' || welcomeDone()) && (
+        <Onboarding pickOnly onClose={() => navigate(pathname, { replace: true, state: null })} />
+      )}
       {tourId && <PageTour key={pathname} id={tourId} />}
 
       <footer className="footer container">

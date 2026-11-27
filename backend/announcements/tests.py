@@ -1407,3 +1407,72 @@ class AccountPrefsTests(BaseCase):
         self.assertEqual(c.post('/api/auth/logout/').status_code, 204)
         self.assertEqual(list(PushSubscription.objects.values_list('endpoint', flat=True)), [self.FCM + 'anon'])
 
+
+
+class ForYouTests(BaseCase):
+    """Home's "For you" row: followed +3, event in the next 7 days +2, posted in the last 3 days +1."""
+    URL = '/api/announcements/for-you/'
+
+    def aged(self, days, **kw):
+        post = self.make(**kw)
+        Announcement.objects.filter(pk=post.pk).update(created_at=timezone.now() - timedelta(days=days))
+        return post
+
+    def titles(self, client, url=URL):
+        return [p['title'] for p in client.get(url).data['results']]
+
+    def test_ranking_order(self):
+        today = timezone.localdate()
+        self.aged(10, title='Old food')                                            # 3
+        self.aged(1, title='New food')                                             # 3 + 1
+        self.aged(10, title='Soon food', event_start=today + timedelta(days=2))    # 3 + 2
+        self.aged(1, title='Soon new food', event_start=today + timedelta(days=5))  # 3 + 2 + 1
+        self.aged(1, title='Later food', event_start=today + timedelta(days=20))   # 3 + 1, older than New food
+        Announcement.objects.filter(title='Later food').update(created_at=timezone.now() - timedelta(days=2))
+        self.aged(0, title='Not followed', category=self.other_cat)
+        self.assertEqual(self.titles(APIClient(), self.URL + '?categories=food-drinks'),
+                         ['Soon new food', 'Soon food', 'New food', 'Later food', 'Old food'])
+
+    def test_expired_and_removed_left_out(self):
+        today = timezone.localdate()
+        self.make(title='Live')
+        self.make(title='Removed', status='removed')
+        self.make(title='Expired', expires_at=today - timedelta(days=1))
+        self.make(title='Past event', event_start=today - timedelta(days=3))
+        self.assertEqual(self.titles(APIClient(), self.URL + '?categories=food-drinks'), ['Live'])
+
+    def test_logged_in_uses_account_follows(self):
+        from announcements.models import NotificationPrefs
+        self.make(title='Food'); self.make(title='Event', category=self.other_cat)
+        NotificationPrefs.objects.create(user=self.user).categories.set([self.other_cat])
+        self.assertEqual(self.titles(self.client), ['Event'])  # e.g. a new device, nothing saved there yet
+        self.assertEqual(self.titles(APIClient()), [])          # guests have no account to fall back on
+
+    def test_no_follows_says_no_interests(self):
+        self.make()
+        self.assertEqual(APIClient().get(self.URL).data, {'results': [], 'reason': 'no_interests'})
+        self.assertEqual(self.client.get(self.URL).data['reason'], 'no_interests')
+
+    def test_guests_never_see_contact_details(self):
+        self.make(title='Phone'); self.make(title='Mail', contact_method='email', contact_info='s@example.com')
+        rows = APIClient().get(self.URL + '?categories=food-drinks').data['results']
+        self.assertEqual([r['contact_info'] for r in rows], ['', ''])
+        self.assertTrue(all(r['contact_info'] for r in self.client.get(self.URL + '?categories=food-drinks').data['results']))
+
+    def test_limit(self):
+        for i in range(12):
+            self.make(title=f'Post {i}')
+        self.assertEqual(len(self.titles(APIClient(), self.URL + '?categories=food-drinks')), 10)
+
+
+class UsageCountTests(BaseCase):
+    def test_counts_known_events_only(self):
+        from django.core.management import call_command
+        from announcements.models import UsageCount
+        guest = APIClient()
+        self.assertEqual(guest.post('/api/usage/', {'event': 'picker_completed'}).status_code, 204)
+        guest.post('/api/usage/', {'event': 'picker_completed'})
+        self.assertEqual(guest.post('/api/usage/', {'event': 'drop table'}).status_code, 400)
+        self.assertEqual(UsageCount.objects.get(name='picker_completed').count, 2)
+        out = io.StringIO(); call_command('usage_counts', stdout=out)
+        self.assertIn('picker_completed', out.getvalue())

@@ -7,6 +7,7 @@ import { mergeOnLogin } from '../accountPrefs'
 import { Field } from '../components/fields'
 import { ErrorBox } from '../components/ui'
 import { safeNext } from '../utils'
+import { pickerSeen } from '../guide'
 
 export default function AuthPage({ mode }) {
   const signup = mode === 'register'
@@ -20,7 +21,8 @@ export default function AuthPage({ mode }) {
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  if (loggedIn) return <Navigate to={next} replace />
+  // While submitting, submit() does the redirect itself (it may carry the interest picker).
+  if (loggedIn && !busy) return <Navigate to={next} replace />
 
   const submit = async (e) => {
     e.preventDefault()
@@ -31,7 +33,8 @@ export default function AuthPage({ mode }) {
       setAuth(data.token, data.user)
       try { await claimBrowserPosts(api) } catch { /* not critical */ }
       try { await mergeOnLogin(api) } catch { /* not critical: settings sync on the next change */ }
-      navigate(next, { replace: true })
+      // New accounts get Lumi's "What are you into?" screen once per device (shown by Layout).
+      navigate(next, { replace: true, state: signup && !pickerSeen() ? { pickInterests: true } : null })
     } catch (err) {
       const p = parseError(err); setError(p.message); setFields(p.fields)
     } finally { setBusy(false) }
