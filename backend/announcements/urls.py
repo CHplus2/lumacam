@@ -13,6 +13,7 @@ urlpatterns = [
     path('lost-found-matches/<int:pk>/dismiss/', views.LostFoundDismissView.as_view()),
     path('pickup-locations/', views.PickupLocationListView.as_view()),
     path('ai/autofill/', views.AutofillView.as_view()),
+    path('ai/autofill-image/', views.PosterAutofillView.as_view()),
     path('auth/prefs/', views.NotificationPrefsView.as_view()),
     path('push/key/', views.PushKeyView.as_view()),
     path('push/subscribe/', views.PushSubscribeView.as_view()),

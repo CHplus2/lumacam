@@ -137,7 +137,7 @@ export function AnnouncementCard({ a, to, footer }) {
       <Link to={to || `/announcements/${a.id}`} className="ann-link">
         <div className={`ann-thumb tone-${a.category_detail?.color || 'blue'}`}>
           {a.image_url
-            ? <img src={a.image_url} alt="" loading="lazy" />
+            ? <img src={a.image_url} alt={a.image_alt || ''} loading="lazy" />
             : Icon && <Icon size={40} strokeWidth={1.6} />}
           {a.event_start && <DateTile start={a.event_start} end={a.event_end} />}
           {a.availability && <StockBadge value={a.availability} className="on-image" />}

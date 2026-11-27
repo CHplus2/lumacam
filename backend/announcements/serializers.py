@@ -239,7 +239,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'title', 'description', 'category', 'category_detail', 'subcategory', 'subcategory_name',
             'publisher_name',
-            'image', 'remove_image', 'image_url', 'contact_method', 'contact_info', 'external_url',
+            'image', 'remove_image', 'image_url', 'image_alt', 'contact_method', 'contact_info', 'external_url',
             'created_at', 'updated_at', 'expires_at', 'event_start', 'event_end',
             'availability', 'stock_updated_at', 'pickup_locations', 'can_edit',
             'lost_found', 'lost_found_place', 'lost_found_date',
