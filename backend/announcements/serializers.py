@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import date
 
 from django.conf import settings
 from django.core.validators import EmailValidator, URLValidator
@@ -241,6 +242,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
             'image', 'remove_image', 'image_url', 'contact_method', 'contact_info', 'external_url',
             'created_at', 'updated_at', 'expires_at', 'event_start', 'event_end',
             'availability', 'stock_updated_at', 'pickup_locations', 'can_edit',
+            'lost_found', 'lost_found_place', 'lost_found_date',
         )
         read_only_fields = ('created_at', 'updated_at', 'stock_updated_at', 'publisher_name')
 
@@ -350,6 +352,10 @@ class AnnouncementSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         self._validate_event(attrs)
+        if attrs.get('lost_found', getattr(self.instance, 'lost_found', '')) == '':
+            attrs['lost_found_place'], attrs['lost_found_date'] = '', None  # not a lost/found post
+        elif (attrs.get('lost_found_date') or date.min) > timezone.localdate():
+            raise serializers.ValidationError({'lost_found_date': "This date hasn't happened yet."})
         self._validate_selling(attrs)
         self._validate_subcategory(attrs)
         method = attrs.get('contact_method', getattr(self.instance, 'contact_method', Announcement.ContactMethod.NONE))

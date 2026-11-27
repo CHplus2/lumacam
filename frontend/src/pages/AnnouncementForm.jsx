@@ -17,7 +17,14 @@ const empty = {
   title: '', category: '', subcategory: '', description: '', contact_method: 'none',
   contact_info: '', external_url: '', expires_at: '', event_start: '', event_end: '',
   availability: 'available', pickup_locations: [],
+  lost_found: '', lost_found_place: '', lost_found_date: '',
 }
+// Lost & found posts are matched with each other (backend lost_found.py).
+const LOST_FOUND = [
+  { value: '', label: 'No' },
+  { value: 'lost', label: 'I lost something' },
+  { value: 'found', label: 'I found something' },
+]
 
 export default function AnnouncementForm() {
   const { id } = useParams()
@@ -57,6 +64,8 @@ export default function AnnouncementForm() {
           external_url: data.external_url || '', expires_at: data.expires_at || '',
           event_start: data.event_start || '', event_end: data.event_end || '',
           availability: data.availability || 'available', pickup_locations: data.pickup_locations || [],
+          lost_found: data.lost_found || '', lost_found_place: data.lost_found_place || '',
+          lost_found_date: data.lost_found_date || '',
         })
         setExistingImage(data.image_url)
         setCanEdit(Boolean(data.can_edit))
@@ -92,10 +101,13 @@ export default function AnnouncementForm() {
     if (f.event_end) patch.event_end = f.event_end
     if (f.pickup_locations) patch.pickup_locations = f.pickup_locations
     if (f.contact_method) { patch.contact_method = f.contact_method; patch.contact_info = f.contact_info }
+    if (f.lost_found) patch.lost_found = f.lost_found
+    if (f.lost_found_place) patch.lost_found_place = f.lost_found_place
     setForm((prev) => ({ ...prev, ...patch }))
     setAiKeys(new Set(Object.keys(patch)))
     const names = { title: 'title', description: 'description', category: 'category', event_start: 'date', event_end: 'date',
-      pickup_locations: 'pickup places', contact_method: 'contact', contact_info: 'contact' }
+      pickup_locations: 'pickup places', contact_method: 'contact', contact_info: 'contact',
+      lost_found: 'lost or found', lost_found_place: 'where' }
     return [...new Set(Object.keys(patch).map((k) => names[k]))]
   }
   const method = CONTACT_METHODS.find((m) => m.value === form.contact_method)
@@ -158,7 +170,7 @@ export default function AnnouncementForm() {
       }
       Object.entries({ ...rest, category: categoryId }).forEach(([k, v]) => {
         // On create, skip empty optional fields; on edit, send them so they can be cleared.
-        if (!editing && ['expires_at', 'external_url', 'event_start', 'event_end', 'subcategory'].includes(k) && !v) return
+        if (!editing && ['expires_at', 'external_url', 'event_start', 'event_end', 'subcategory', 'lost_found_date'].includes(k) && !v) return
         body.append(k, v)
       })
       if (file) body.append('image', file)
@@ -238,6 +250,34 @@ export default function AnnouncementForm() {
       {form.category === NEW_CATEGORY && <div className="new-cat"><CategoryFields value={newCat} onChange={setNewCat} errors={catErrors} /></div>}
 
       <div className="field">
+        <span className="label" id="lf-label">Is this a lost or found item?</span>
+        <div className="stock-picker" role="radiogroup" aria-labelledby="lf-label">
+          {LOST_FOUND.map((o) => (
+            <button key={o.value} type="button" role="radio" aria-checked={form.lost_found === o.value}
+              className={`stock-option ${form.lost_found === o.value ? 'selected lf-selected' : ''} ${ai('lost_found') || ''}`}
+              onClick={() => setForm((f) => (o.value ? { ...f, lost_found: o.value, event_start: '', event_end: '' } : { ...f, lost_found: '' }))}>{o.label}</button>
+          ))}
+        </div>
+        {form.lost_found && (
+          <>
+            <div className="grid-2">
+              <Field label="Where?" htmlFor="lost_found_place" error={fields.lost_found_place}>
+                <input id="lost_found_place" className={ai('lost_found_place')} value={form.lost_found_place} maxLength={80}
+                  onChange={set('lost_found_place')} placeholder="e.g. Lecture Hall B" />
+              </Field>
+              <Field label="When?" htmlFor="lost_found_date" error={fields.lost_found_date}>
+                <input id="lost_found_date" type="date" max={today} value={form.lost_found_date} onChange={set('lost_found_date')} />
+              </Field>
+            </div>
+            <small className="muted">
+              Lumi checks {form.lost_found === 'lost' ? 'found' : 'lost'} posts for a match and shows you any on your post.
+            </small>
+          </>
+        )}
+      </div>
+
+      {/* Lost & found posts use their own "When?" above; an event date would make them expire. */}
+      {!form.lost_found && <div className="field">
         <span className="label">When (optional)</span>
         <div className="grid-2">
           <Field label="Start date" htmlFor="event_start" error={fields.event_start}>
@@ -258,7 +298,7 @@ export default function AnnouncementForm() {
         ) : (
           <small className="muted">For events, deadlines or preorders, so people can find it by date. Leave empty if it doesn&apos;t apply.</small>
         )}
-      </div>
+      </div>}
 
       {selling && (
         <div className="selling-fields">

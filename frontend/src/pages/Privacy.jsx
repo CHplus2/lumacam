@@ -27,7 +27,7 @@ const T = {
     faq: [
       ['What do you collect about me?', null],
       ['Why do you need it?', 'To show your posts with your name, let only you edit them, let buyers contact you, and send the notifications you asked for. Nothing else.'],
-      ['Who else sees it?', 'Anyone can see your posts. Phone numbers and emails only show to signed-in students. Our service providers handle data for us: Vercel and our database host (hosting), DeepSeek (AI, servers in China) only when you tap “Fill in for me”, and Google, Apple or Mozilla to deliver notifications.'],
+      ['Who else sees it?', 'Anyone can see your posts. Phone numbers and emails only show to signed-in students. Our service providers handle data for us: Vercel and our database host (hosting), DeepSeek (AI, servers in China) only when you tap “Fill in for me” or post a lost or found item (the text of lost and found posts, never contact details, is sent to find matches), and Google, Apple or Mozilla to deliver notifications.'],
       ['Do you sell my data?', 'No. No ads, no selling, no sharing for marketing.'],
       ['How long do you keep it?', `Posts stay until you delete them. Expired posts are hidden but kept, so you can edit and repost them. Deleted posts stay in your Trash for ${TRASH_DAYS} days, then are erased. Deleting your account erases everything at once.`],
       ['Can I see, fix or delete it?', 'Yes. Edit or delete any post from My posts. Delete your account at the bottom of this page to erase everything at once.'],
@@ -65,7 +65,7 @@ const T = {
     faq: [
       ['Apakah data yang dikumpul tentang saya?', null],
       ['Mengapa data ini diperlukan?', 'Untuk memaparkan siaran anda bersama nama anda, memastikan hanya anda boleh menyuntingnya, membolehkan pembeli menghubungi anda, dan menghantar pemberitahuan yang anda minta. Itu sahaja.'],
-      ['Siapa lagi yang boleh melihatnya?', 'Sesiapa sahaja boleh melihat siaran anda. Nombor telefon dan e-mel hanya ditunjukkan kepada pelajar yang log masuk. Penyedia perkhidmatan kami mengendalikan data bagi pihak kami: Vercel dan penyedia pangkalan data kami (pengehosan), DeepSeek (AI, pelayan di China) hanya apabila anda menekan “Fill in for me”, serta Google, Apple atau Mozilla untuk menghantar pemberitahuan.'],
+      ['Siapa lagi yang boleh melihatnya?', 'Sesiapa sahaja boleh melihat siaran anda. Nombor telefon dan e-mel hanya ditunjukkan kepada pelajar yang log masuk. Penyedia perkhidmatan kami mengendalikan data bagi pihak kami: Vercel dan penyedia pangkalan data kami (pengehosan), DeepSeek (AI, pelayan di China) hanya apabila anda menekan “Fill in for me” atau menyiarkan barang hilang atau dijumpai (teks siaran hilang dan dijumpai, bukan butiran hubungan, dihantar untuk mencari padanan), serta Google, Apple atau Mozilla untuk menghantar pemberitahuan.'],
       ['Adakah data saya dijual?', 'Tidak. Tiada iklan, tiada penjualan dan tiada perkongsian untuk pemasaran.'],
       ['Berapa lama data disimpan?', `Siaran kekal sehingga anda memadamnya. Siaran yang tamat tempoh disembunyikan tetapi disimpan supaya anda boleh menyunting dan menyiarkannya semula. Siaran yang dipadam kekal dalam Trash selama ${TRASH_DAYS} hari, kemudian dihapuskan. Memadam akaun menghapuskan semuanya serta-merta.`],
       ['Bolehkah saya melihat, membetulkan atau memadam data saya?', 'Boleh. Sunting atau padam mana-mana siaran di My posts. Padam akaun anda di bahagian bawah halaman ini untuk menghapuskan semuanya sekali gus.'],

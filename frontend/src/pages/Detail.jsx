@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Calendar, ExternalLink, Lock, Mail, MessageCircle, Pencil, Trash2, UserCheck } from 'lucide-react'
 import api, { parseError } from '../api'
-import { CategoryBadge, EmptyState, ErrorBox, EventBadge, ShareBar, Spinner } from '../components/ui'
+import { CategoryBadge, EmptyState, ErrorBox, EventBadge, Lumi, ShareBar, Spinner } from '../components/ui'
 import { PickupTags, StockBadge, StockPicker } from '../components/selling'
 import { useAuth } from '../auth'
 import { contactLink, fmtAgo, fmtDate, fmtDay, safeUrl, stockLabel, TRASH_DAYS } from '../utils'
@@ -84,7 +84,15 @@ export default function Detail() {
           {a.expires_at && <> · <Calendar size={14} className="inline" /> Expires {fmtDay(a.expires_at)}</>}
         </p>
         <ShareBar a={a} />
+        {a.lost_found && (
+          <p className="ann-meta">
+            <strong>{a.lost_found === 'lost' ? 'Lost' : 'Found'}</strong>
+            {a.lost_found_place && <> at {a.lost_found_place}</>}
+            {a.lost_found_date && <> on {fmtDay(a.lost_found_date)}</>}
+          </p>
+        )}
         <p className="detail-desc">{a.description}</p>
+        {a.can_edit && a.lost_found && <LostFoundMatches postId={a.id} />}
 
         {a.pickup_locations?.length > 0 && (
           <div className="detail-section" data-tour="pickup">
@@ -163,5 +171,41 @@ export default function Detail() {
         )}
       </div>
     </article>
+  )
+}
+
+/** Owner only: posts Lumi thinks could be the other half of this lost or found item. */
+function LostFoundMatches({ postId }) {
+  const [rows, setRows] = useState([])
+  useEffect(() => {
+    api.get(`/announcements/${postId}/matches/`).then(({ data }) => setRows(data)).catch(() => {})
+  }, [postId])
+  if (!rows.length) return null
+
+  const dismiss = (matchId) => {
+    setRows((r) => r.filter((m) => m.id !== matchId))
+    api.post(`/lost-found-matches/${matchId}/dismiss/`).catch(() => {})
+  }
+  return (
+    <section className="detail-section stock-box lf-matches" aria-label="Possible matches">
+      <div className="row">
+        <Lumi mood="found" size={56} />
+        <div>
+          <h3>Possible matches</h3>
+          <p className="muted small">Only you can see these. Open one and contact them through the post.</p>
+        </div>
+      </div>
+      <ul>
+        {rows.map((m) => (
+          <li key={m.id} className="lf-match">
+            <Link to={`/announcements/${m.post.id}`}>
+              <strong>{m.post.title}</strong>
+              <span className="muted small">{m.reason}</span>
+            </Link>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => dismiss(m.id)}>Not mine</button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }

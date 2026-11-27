@@ -1476,3 +1476,127 @@ class UsageCountTests(BaseCase):
         self.assertEqual(UsageCount.objects.get(name='picker_completed').count, 2)
         out = io.StringIO(); call_command('usage_counts', stdout=out)
         self.assertIn('picker_completed', out.getvalue())
+
+
+class LostFoundTests(BaseCase):
+    """Lost posts get matched with found posts; only owners see matches; AI only filters."""
+
+    def setUp(self):
+        super().setUp()
+        import os
+        from unittest import mock
+        self.other = Category.objects.get(slug='other')
+        self.bob = User.objects.create_user('bob', password=PW)
+        self.bob_client = APIClient(); self.bob_client.force_authenticate(self.bob)
+        # AI off unless a test turns it on.
+        patcher = mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': ''})
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def post(self, client, title, kind, place='Lecture Hall B', **kw):
+        body = {'title': title, 'description': title + ', please help.', 'category': self.other.id,
+                'contact_method': 'whatsapp', 'contact_info': '60123456789', 'lost_found': kind,
+                'lost_found_place': place, **kw}
+        r = client.post('/api/announcements/', body, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        return r.data['id']
+
+    def matches(self, client, pk):
+        return client.get(f'/api/announcements/{pk}/matches/').data
+
+    def test_lost_matched_to_similar_found_by_words_when_ai_off(self):
+        lost = self.post(self.client, 'Lost: black umbrella near Lecture Hall B', 'lost')
+        found = self.post(self.bob_client, 'Found: black foldable umbrella, Lecture Hall B', 'found')
+        rows = self.matches(self.client, lost)
+        self.assertEqual([r['post']['id'] for r in rows], [found])
+        self.assertIn('umbrella', rows[0]['reason'])
+        self.assertNotIn('contact_info', rows[0]['post'])
+        self.assertEqual([r['post']['id'] for r in self.matches(self.bob_client, found)], [lost])  # finder sees it too
+
+    def test_opposite_kind_only_and_unrelated_ignored(self):
+        self.post(self.client, 'Lost: black umbrella', 'lost')
+        self.post(self.bob_client, 'Lost: black umbrella too', 'lost')
+        self.post(self.bob_client, 'Found: blue water bottle', 'found', place='Cafeteria')
+        from announcements.models import LostFoundMatch
+        self.assertEqual(LostFoundMatch.objects.count(), 0)
+
+    def test_old_removed_and_own_posts_ignored(self):
+        from announcements.models import LostFoundMatch
+        old = self.make(title='Found black umbrella', category=self.other, lost_found='found', publisher=self.bob)
+        Announcement.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=40))
+        self.make(title='Found black umbrella', category=self.other, lost_found='found', publisher=self.bob, status='removed')
+        self.make(title='Found black umbrella', category=self.other, lost_found='found')  # my own post
+        self.post(self.client, 'Lost black umbrella', 'lost')
+        self.assertEqual(LostFoundMatch.objects.count(), 0)
+
+    def ai(self, reply):
+        import os
+        from unittest import mock
+        from announcements import ai_fill
+        sent = []
+        def fake_call(system, user, timeout):
+            sent.append(user)
+            return json.dumps(reply(json.loads(user))), {}
+        return sent, mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'k'}), mock.patch.object(ai_fill, '_call', side_effect=fake_call)
+
+    def test_ai_unknown_id_dropped_and_no_contact_details_sent(self):
+        from announcements.models import LostFoundMatch
+        found = self.post(self.bob_client, 'Found black umbrella', 'found')
+        sent, env, call = self.ai(lambda req: {'matches': [{'id': found, 'reason': 'Same black umbrella'},
+                                                           {'id': 99999, 'reason': 'made up'}, 'junk']})
+        with env, call:
+            lost = self.post(self.client, 'Lost black umbrella', 'lost')
+        self.assertEqual(list(LostFoundMatch.objects.values_list('lost', 'found', 'reason')),
+                         [(lost, found, 'Same black umbrella')])
+        self.assertEqual(len(sent), 1)
+        for leak in ('60123456789', 'contact', 'alice', 'bob', 'Alice'):
+            self.assertNotIn(leak, sent[0])
+
+    def test_ai_saying_no_match_wins_over_words(self):
+        from announcements.models import LostFoundMatch
+        self.post(self.bob_client, 'Found black umbrella', 'found')
+        _, env, call = self.ai(lambda req: {'matches': []})
+        with env, call:
+            self.post(self.client, 'Lost black wallet near umbrella stand', 'lost')
+        self.assertEqual(LostFoundMatch.objects.count(), 0)
+
+    def test_only_owner_sees_and_not_mine_hides_and_no_duplicates(self):
+        from announcements.models import LostFoundMatch, UsageCount
+        lost = self.post(self.client, 'Lost black umbrella', 'lost')
+        self.post(self.bob_client, 'Found black umbrella', 'found')
+        self.assertEqual(self.bob_client.get(f'/api/announcements/{lost}/matches/').status_code, 404)
+        self.assertEqual(APIClient().get(f'/api/announcements/{lost}/matches/').status_code, 401)
+        self.client.patch(f'/api/announcements/{lost}/', {'description': 'Lost black umbrella, wooden handle'}, format='json')
+        self.assertEqual(LostFoundMatch.objects.count(), 1)  # editing re-runs matching without duplicates
+        match_id = self.matches(self.client, lost)[0]['id']
+        carol = APIClient(); carol.force_authenticate(User.objects.create_user('carol', password=PW))
+        self.assertEqual(carol.post(f'/api/lost-found-matches/{match_id}/dismiss/').status_code, 404)
+        self.assertEqual(self.client.post(f'/api/lost-found-matches/{match_id}/dismiss/').status_code, 204)
+        self.assertEqual(self.matches(self.client, lost), [])
+        self.assertEqual(UsageCount.objects.get(name='lf_matches_dismissed').count, 1)
+
+    def test_owner_notified_within_limits(self):
+        from unittest import mock
+        from announcements.models import PushSubscription
+        PushSubscription.objects.create(endpoint='https://fcm.googleapis.com/fcm/send/x', p256dh='k', auth='a',
+                                        user=self.user, quiet_hours=False, frequency='every')
+        self.post(self.client, 'Lost black umbrella', 'lost')
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver, \
+                mock.patch('announcements.push._vapid'):
+            self.post(self.bob_client, 'Found black umbrella', 'found')
+        payloads = [json.loads(c.args[1]) for c in deliver.call_args_list]
+        self.assertIn('Lumi may have found your Lost black umbrella', [p['title'] for p in payloads])
+
+    def test_not_lost_found_clears_fields_and_future_date_rejected(self):
+        pk = self.post(self.client, 'Lost keys', 'lost')
+        r = self.client.patch(f'/api/announcements/{pk}/', {'lost_found': ''}, format='json')
+        self.assertEqual((r.data['lost_found'], r.data['lost_found_place']), ('', ''))
+        tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+        r = self.client.post('/api/announcements/', {'title': 'Lost pen', 'description': 'Blue pen, help.',
+                             'category': self.other.id, 'lost_found': 'lost', 'lost_found_date': tomorrow}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_autofill_cleans_lost_found(self):
+        from announcements.ai_fill import _clean
+        self.assertEqual(_clean({'title': 'Umbrella', 'lost_found': 'found', 'lost_found_place': ' Hall B '}, {}),
+                         {'title': 'Umbrella', 'lost_found': 'found', 'lost_found_place': 'Hall B'})
+        self.assertEqual(_clean({'title': 'Umbrella', 'lost_found': 'stolen'}, {}), {'title': 'Umbrella'})
