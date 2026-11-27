@@ -375,6 +375,15 @@ a.pickup-tag:hover { border-color: var(--primary); text-decoration: none; }
 .ann-actions { padding: 0 16px 14px; display: flex; gap: 8px; }
 .ann-actions .btn { flex: 1; }
 
+/* Home feed tabs: For you | Latest */
+.feed-head { margin-bottom: 6px; }
+.feed-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 14px; background: #eef0f5; }
+.feed-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 0; border-radius: 10px; background: none; font: inherit; font-weight: 700; font-size: 0.95rem; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.feed-tabs button.on { background: #fff; color: var(--text); box-shadow: var(--shadow); }
+.feed-tabs button.on svg { color: var(--primary); }
+.feed-hint { margin: 0 0 14px; font-size: 0.85rem; }
+.feed-panel { touch-action: pan-y; min-height: 160px; }
+
 /* Grid / list switch */
 .section-actions { display: flex; align-items: center; gap: 14px; flex: none; }
 .view-toggle { flex: none; display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }

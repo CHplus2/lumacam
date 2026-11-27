@@ -14,6 +14,7 @@ const TOURS = {
     { sel: '[data-tour="home"]', mood: 'curious', title: 'This is Home', text: 'New posts from around campus land here first.' },
     { sel: '[data-tour="search"]', mood: 'found', title: 'Looking for something?', text: 'Search food, books or events, like "nasi lemak".' },
     { sel: '[data-tour="categories"]', mood: 'happy', title: 'Browse by category', text: 'Tap one to see its posts. You can Follow it from there.' },
+    { sel: '[data-tour="feed"]', mood: 'wink', title: 'For you or Latest', text: 'Tap a tab or swipe to switch: posts from what you follow, or everything new.' },
     { sel: '[data-tour="bell"]', mood: 'surprised', title: 'New posts show up here', text: "When something's posted in what you follow, I'll put it under the bell." },
     { sel: '[data-tour="post"]', mood: 'love', title: 'Selling or announcing something?', text: 'Tap here to post. You need a free account, and it goes live straight away.' },
     { sel: '[data-tour="explore"]', mood: 'wink', title: 'See everything', text: "Filter by today or the next 7 days, or sort by what's ending soon." },
