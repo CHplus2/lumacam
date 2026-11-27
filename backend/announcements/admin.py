@@ -1,19 +1,32 @@
 from django.contrib import admin
 
-from .models import Announcement, Category, PickupLocation, PushSubscription
+from .models import Announcement, Category, NotificationPrefs, PickupLocation, PushSubscription, Subcategory
 
 admin.site.register(PickupLocation)
 
 
 @admin.register(PushSubscription)
 class PushSubscriptionAdmin(admin.ModelAdmin):
-    list_display = ('__str__', 'frequency', 'quiet_hours', 'last_sent_at', 'created_at')
+    list_display = ('__str__', 'user', 'frequency', 'quiet_hours', 'last_sent_at', 'created_at')
+    filter_horizontal = ('categories',)
+
+
+@admin.register(NotificationPrefs)
+class NotificationPrefsAdmin(admin.ModelAdmin):
+    list_display = ('user', 'frequency', 'quiet_hours', 'updated_at')
     filter_horizontal = ('categories',)
 
 
 
+class SubcategoryInline(admin.TabularInline):
+    model = Subcategory
+    extra = 1
+    fields = ('name', 'sort_order')
+
+
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
+    inlines = [SubcategoryInline]
     list_display = ('name', 'slug', 'is_removed', 'sort_order')
     list_filter = ('is_removed',)
     actions = ['restore']

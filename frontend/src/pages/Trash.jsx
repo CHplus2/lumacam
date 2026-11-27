@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArchiveRestore } from 'lucide-react'
+import { ArchiveRestore, Trash2, X } from 'lucide-react'
 import api, { parseError } from '../api'
 import { CategoryBadge, EmptyState, ErrorBox, Spinner } from '../components/ui'
 import { ICONS, TRASH_DAYS, fmtRelative, timeLeft } from '../utils'
@@ -65,6 +65,19 @@ export default function Trash() {
     } finally { setBusyId(null) }
   }
 
+  const deleteForever = async (item) => {
+    const label = tab === 'categories' ? `the category "${item.name}"` : `"${item.title}"`
+    if (!window.confirm(`Delete ${label} forever? This can't be undone.`)) return
+    setBusyId(item.id); setMessage(null)
+    try {
+      await api.delete(`/trash/${tab}/${item.id}/`)
+      setItems((list) => list.filter((x) => x.id !== item.id))
+      setMessage({ text: `Deleted ${label} forever.` })
+    } catch (e) {
+      setMessage({ error: true, text: parseError(e).message })
+    } finally { setBusyId(null) }
+  }
+
   const switchTab = (key) => {
     setMessage(null)
     setParams(key === 'announcements' ? {} : { tab: key }, { replace: true })
@@ -87,9 +100,12 @@ export default function Trash() {
       </div>
 
       {message && (
-        <div className={`alert ${message.error ? 'alert-error' : 'alert-ok'}`} role="status">
+        <div key={message.text} role="status"
+          className={`alert ${message.error ? 'alert-error' : 'alert-ok toast-fade'}`}
+          onAnimationEnd={(e) => { if (e.animationName === 'toast-fade') setMessage(null) }}>
           <span>{message.text}</span>
           {message.to && <Link to={message.to} className="btn btn-sm">{message.link}</Link>}
+          <button type="button" className="icon-btn" aria-label="Dismiss" onClick={() => setMessage(null)}><X size={16} /></button>
         </div>
       )}
       <ErrorBox message={error} onRetry={() => load()} />
@@ -130,9 +146,14 @@ export default function Trash() {
                     )}
                     <ExpiryNote item={item} />
                   </div>
-                  <button type="button" className="btn btn-sm" onClick={() => restore(item)} disabled={busyId === item.id}>
-                    <ArchiveRestore size={15} /> {busyId === item.id ? 'Restoring...' : 'Restore'}
-                  </button>
+                  <div className="trash-actions">
+                    <button type="button" className="btn btn-sm" onClick={() => restore(item)} disabled={busyId === item.id}>
+                      <ArchiveRestore size={15} /> Restore
+                    </button>
+                    <button type="button" className="btn btn-sm btn-quiet-danger" onClick={() => deleteForever(item)} disabled={busyId === item.id}>
+                      <Trash2 size={15} /> Delete forever
+                    </button>
+                  </div>
                 </li>
               )
             })}

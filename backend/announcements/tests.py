@@ -752,7 +752,8 @@ class PushTests(BaseCase):
         body = {'subscription': {'endpoint': endpoint or self.FCM + 'device-1', 'keys': self.keys},
                 'categories': list(categories), 'frequency': 'every', 'quiet_hours': False}
         body.update(settings)
-        return self.client.post('/api/push/subscribe/', body, format='json')
+        # Device-only subscriptions (logged out); account-linked ones are tested in AccountPrefsTests.
+        return APIClient().post('/api/push/subscribe/', body, format='json')
 
     def test_public_key_is_stable_p256_point(self):
         import base64
@@ -963,8 +964,8 @@ class PushTests(BaseCase):
                          {'subscribed': False})
         self.subscribe(categories=['events'], frequency='daily', quiet_hours=True, utc_offset_minutes=480)
         r = self.client.post('/api/push/status/', {'endpoint': self.FCM + 'device-1'}, format='json')
-        self.assertEqual(r.data, {'subscribed': True, 'categories': ['events'], 'frequency': 'daily',
-                                  'quiet_hours': True, 'utc_offset_minutes': 480})
+        self.assertEqual(r.data, {'subscribed': True, 'linked_to_account': False, 'categories': ['events'],
+                                  'frequency': 'daily', 'quiet_hours': True, 'utc_offset_minutes': 480})
 
 
 
@@ -1174,3 +1175,235 @@ class AiRetryTests(BaseCase):
             out = ai_fill.autofill('Lost black umbrella', {'other': 'Other'})
         self.assertEqual(out, {'title': 'Lost umbrella'})
         self.assertEqual(call.call_count, 2)
+
+
+class CategoryEditAndDeleteForeverTests(BaseCase):
+    def setUp(self):
+        super().setUp()
+        self.mine = Category.objects.create(name='Clubs', slug='clubs', icon='music', color='blue',
+                                            created_by=self.user, sells_items=True)
+        self.bob = APIClient()
+        self.bob.force_authenticate(User.objects.create_user('bob', password=PW))
+
+    # ---- editing categories ----
+    def test_creator_can_edit_and_slug_stays(self):
+        r = self.client.patch(f'/api/categories/{self.mine.id}/',
+                              {'name': 'Clubs & Societies', 'description': 'Student clubs', 'icon': 'trophy', 'color': 'rose'})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual((r.data['name'], r.data['slug'], r.data['icon'], r.data['color']),
+                         ('Clubs & Societies', 'clubs', 'trophy', 'rose'))
+        self.assertTrue(r.data['can_edit'])
+
+    def test_others_and_originals_cannot_be_edited(self):
+        self.assertEqual(self.bob.patch(f'/api/categories/{self.mine.id}/', {'name': 'Hacked'}).status_code, 403)
+        self.assertIn(APIClient().patch(f'/api/categories/{self.mine.id}/', {'name': 'x'}).status_code, (401, 403))
+        r = self.client.patch(f'/api/categories/{self.cat.id}/', {'name': 'Food'})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('site admin', r.data['detail'])
+        self.assertFalse(self.client.get(f'/api/categories/{self.cat.id}/').data['can_edit'])
+        self.mine.refresh_from_db()
+        self.assertEqual(self.mine.name, 'Clubs')
+
+    def test_rename_validation(self):
+        self.assertEqual(self.client.patch(f'/api/categories/{self.mine.id}/', {'name': 'food & drinks'}).status_code, 400)
+        Category.objects.create(name='Old one', slug='old-one', icon='tag', is_removed=True)
+        r = self.client.patch(f'/api/categories/{self.mine.id}/', {'name': 'old one'})
+        self.assertIn('deleted category', r.data['name'][0])
+        self.assertEqual(self.client.patch(f'/api/categories/{self.mine.id}/', {'name': 'clubs'}).status_code, 200)
+
+    def test_turning_off_selling_clears_stock_and_pickups(self):
+        a = self.client.post('/api/announcements/', self.payload(category=self.mine.id, availability='out',
+                                                                 pickup_locations=['Hostel A']), format='json').data
+        self.assertEqual(a['availability'], 'out')
+        self.client.patch(f'/api/categories/{self.mine.id}/', {'sells_items': False}, format='json')
+        post = self.client.get(f"/api/announcements/{a['id']}/").data
+        self.assertEqual((post['availability'], post['pickup_locations']), ('', []))
+
+    # ---- delete forever ----
+    def test_delete_post_forever(self):
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file()}, format='multipart')
+        pk = r.data['id']
+        self.assertEqual(self.client.delete(f'/api/trash/announcements/{pk}/').status_code, 404)  # not in Trash yet
+        self.client.delete(f'/api/announcements/{pk}/')
+        self.assertEqual(self.bob.delete(f'/api/trash/announcements/{pk}/').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/trash/announcements/{pk}/').status_code, 204)
+        self.assertFalse(Announcement.objects.filter(pk=pk).exists())
+        self.assertEqual(StoredFile.objects.count(), 0)
+        self.assertEqual(self.client.post(f'/api/trash/announcements/{pk}/restore/').status_code, 404)
+
+    def test_delete_category_forever(self):
+        self.client.delete(f'/api/categories/{self.mine.id}/')
+        self.assertEqual(self.bob.delete(f'/api/trash/categories/{self.mine.id}/').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/trash/categories/{self.mine.id}/').status_code, 204)
+        self.assertFalse(Category.objects.filter(pk=self.mine.id).exists())
+
+    def test_category_with_deleted_posts_waits(self):
+        mine = self.make(category=self.mine)
+        self.client.delete(f'/api/announcements/{mine.id}/')
+        self.client.delete(f'/api/categories/{self.mine.id}/')
+        r = self.client.delete(f'/api/trash/categories/{self.mine.id}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('1 of your deleted posts', r.data['detail'])
+        self.client.delete(f'/api/trash/announcements/{mine.id}/')
+        self.assertEqual(self.client.delete(f'/api/trash/categories/{self.mine.id}/').status_code, 204)
+
+    def test_other_peoples_deleted_posts_block_with_explanation(self):
+        theirs = Announcement.objects.create(title='Theirs', description='Bob posted this one.', category=self.mine,
+                                             publisher_name='Bob', status='removed', removed_at=timezone.now())
+        self.client.delete(f'/api/categories/{self.mine.id}/')
+        r = self.client.delete(f'/api/trash/categories/{self.mine.id}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('erased automatically', r.data['detail'])
+        self.assertTrue(Announcement.objects.filter(pk=theirs.pk).exists())
+
+
+class SubcategoryTests(BaseCase):
+    def setUp(self):
+        super().setUp()
+        self.mine = Category.objects.create(name='Clubs', slug='clubs', icon='music', created_by=self.user)
+        self.bob = APIClient()
+        self.bob.force_authenticate(User.objects.create_user('bob', password=PW))
+
+    def subs(self, cat):
+        return [s['name'] for s in self.client.get(f'/api/categories/{cat.id}/').data['subcategories']]
+
+    def test_original_categories_have_starters(self):
+        data = {c['slug']: [s['name'] for s in c['subcategories']] for c in self.client.get('/api/categories/').data}
+        self.assertEqual(data['food-drinks'], ['Meals', 'Snacks', 'Drinks', 'Desserts', 'Pre-orders'])
+        self.assertIn('Internships', data['opportunities'])
+        self.assertEqual(data['clubs'], [])
+
+    def test_create_category_with_subcategories(self):
+        r = self.client.post('/api/categories/', {'name': 'Sports', 'icon': 'dumbbell', 'color': 'teal',
+                                                  'subcategories': ['Futsal', {'name': ' Badminton '}]}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual([s['name'] for s in r.data['subcategories']], ['Futsal', 'Badminton'])
+
+    def test_creator_syncs_subcategories_and_posts_lose_deleted_one(self):
+        self.client.patch(f'/api/categories/{self.mine.id}/', {'subcategories': ['Music', 'Dance', 'Drama']}, format='json')
+        subs = self.client.get(f'/api/categories/{self.mine.id}/').data['subcategories']
+        music, dance = subs[0]['id'], subs[1]['id']
+        post = self.make(category=self.mine, subcategory_id=dance)
+        r = self.client.patch(f'/api/categories/{self.mine.id}/',
+                              {'subcategories': [{'id': music, 'name': 'Music & Bands'}, {'name': 'Film'}]}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual([s['name'] for s in r.data['subcategories']], ['Music & Bands', 'Film'])
+        self.assertEqual(r.data['subcategories'][0]['id'], music)  # renamed, same id
+        post.refresh_from_db()
+        self.assertIsNone(post.subcategory_id)
+        self.assertEqual(Announcement.objects.filter(pk=post.pk).count(), 1)  # the post itself stays
+
+    def test_subcategory_validation_and_permissions(self):
+        url = f'/api/categories/{self.mine.id}/'
+        self.assertEqual(self.client.patch(url, {'subcategories': ['Art', 'art']}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'subcategories': ['x']}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'subcategories': [f'Sub {i}' for i in range(13)]}, format='json').status_code, 400)
+        self.assertEqual(self.bob.patch(url, {'subcategories': ['Hacked']}, format='json').status_code, 403)
+        self.assertEqual(self.client.patch(f'/api/categories/{self.cat.id}/', {'subcategories': []}, format='json').status_code, 403)
+        self.assertEqual(self.subs(self.mine), [])
+        self.assertEqual(len(self.subs(self.cat)), 5)
+
+    def test_post_with_subcategory_and_filter(self):
+        desserts = self.cat.subcategories.get(name='Desserts')
+        drinks = self.cat.subcategories.get(name='Drinks')
+        a = self.client.post('/api/announcements/', self.payload(title='Kuih lapis', subcategory=desserts.id), format='json')
+        self.assertEqual((a.status_code, a.data['subcategory_name']), (201, 'Desserts'), a.data)
+        self.client.post('/api/announcements/', self.payload(title='Teh tarik', subcategory=drinks.id), format='json')
+        self.client.post('/api/announcements/', self.payload(title='No sub'), format='json')
+        self.assertEqual(self.public_titles(f'/api/announcements/?category=food-drinks&sub={desserts.id}'), ['Kuih lapis'])
+        self.assertEqual(len(self.public_titles('/api/announcements/?category=food-drinks')), 3)
+
+    def test_subcategory_must_match_category(self):
+        workshops = self.other_cat.subcategories.get(name='Workshops')
+        r = self.client.post('/api/announcements/', self.payload(subcategory=workshops.id), format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('not part of Food & Drinks', r.data['subcategory'][0])
+
+    def test_moving_category_drops_subcategory_and_blank_clears(self):
+        snacks = self.cat.subcategories.get(name='Snacks')
+        pk = self.client.post('/api/announcements/', self.payload(subcategory=snacks.id), format='json').data['id']
+        r = self.client.patch(f'/api/announcements/{pk}/', {'category': self.other_cat.id}, format='json')
+        self.assertEqual((r.status_code, r.data['subcategory']), (200, None))
+        r = self.client.patch(f'/api/announcements/{pk}/', {'category': self.cat.id, 'subcategory': snacks.id}, format='json')
+        self.assertEqual(r.data['subcategory_name'], 'Snacks')
+        r = self.client.patch(f'/api/announcements/{pk}/', {'subcategory': ''}, format='multipart')
+        self.assertEqual((r.status_code, r.data['subcategory']), (200, None))
+
+
+class AccountPrefsTests(BaseCase):
+    """Notification settings belong to the account and apply on all its logged-in devices."""
+    FCM = 'https://fcm.googleapis.com/fcm/send/'
+
+    def setUp(self):
+        super().setUp()
+        import base64
+        import os
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        raw = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+        b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b'=').decode()  # noqa: E731
+        self.keys = {'p256dh': b64(raw), 'auth': b64(os.urandom(16))}
+
+    def device(self, name, client=None, **body):
+        data = {'subscription': {'endpoint': self.FCM + name, 'keys': self.keys}, 'categories': [],
+                'frequency': 'every', 'quiet_hours': False}
+        data.update(body)
+        return (client or self.client).post('/api/push/subscribe/', data, format='json')
+
+    def test_prefs_get_put(self):
+        self.assertEqual(self.client.get('/api/auth/prefs/').data['saved'], False)
+        r = self.client.put('/api/auth/prefs/', {'categories': ['food-drinks', 'events', 'nope'], 'frequency': 'daily',
+                                                 'quiet_hours': False}, format='json')
+        self.assertEqual((r.data['saved'], r.data['categories'], r.data['frequency'], r.data['quiet_hours']),
+                         (True, ['events', 'food-drinks'], 'daily', False))
+        self.assertEqual(self.client.get('/api/auth/prefs/').data['categories'], ['events', 'food-drinks'])
+        self.assertEqual(APIClient().get('/api/auth/prefs/').status_code, 401)
+        self.assertEqual(self.client.put('/api/auth/prefs/', {'frequency': 'always'}, format='json').status_code, 400)
+
+    def test_logged_in_device_is_linked_and_saves_prefs(self):
+        r = self.device('phone', categories=['events'])
+        self.assertTrue(r.data['linked_to_account'])
+        self.assertEqual(self.client.get('/api/auth/prefs/').data['categories'], ['events'])
+
+    def test_all_logged_in_devices_follow_the_account(self):
+        from unittest import mock
+        self.device('phone', categories=['food-drinks'])
+        self.device('laptop', categories=['food-drinks'])
+        # Later the account changes its follows (e.g. on a third device without push).
+        self.client.put('/api/auth/prefs/', {'categories': ['events'], 'frequency': 'every', 'quiet_hours': False},
+                        format='json')
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver:
+            self.client.post('/api/announcements/', self.payload(title='Food post'))
+            self.assertEqual(deliver.call_count, 0)  # no longer follows food
+            self.client.post('/api/announcements/', self.payload(title='Event post', category=self.other_cat.id))
+        self.assertEqual(sorted(c.args[0]['endpoint'] for c in deliver.call_args_list),
+                         [self.FCM + 'laptop', self.FCM + 'phone'])
+
+    def test_account_limits_apply_to_linked_devices(self):
+        from unittest import mock
+        self.device('phone', categories=['food-drinks'])
+        self.client.put('/api/auth/prefs/', {'categories': ['food-drinks'], 'frequency': 'hourly', 'quiet_hours': False},
+                        format='json')
+        with mock.patch('announcements.push._deliver', return_value='ok') as deliver:
+            self.client.post('/api/announcements/', self.payload(title='One'))
+            self.client.post('/api/announcements/', self.payload(title='Two'))
+        self.assertEqual(deliver.call_count, 1)
+
+    def test_logging_out_device_unlinks_it(self):
+        from announcements.models import PushSubscription
+        self.device('phone', categories=['events'])
+        r = self.device('phone', client=APIClient(), categories=['surveys'])  # same phone, logged out now
+        self.assertFalse(r.data['linked_to_account'])
+        self.assertIsNone(PushSubscription.objects.get().user_id)
+
+    def test_log_out_everywhere_removes_account_devices(self):
+        from announcements.models import PushSubscription
+        from rest_framework.authtoken.models import Token
+        self.device('phone', categories=['events'])
+        self.device('anon', client=APIClient(), categories=['events'])
+        token = Token.objects.create(user=self.user)
+        c = APIClient(); c.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+        self.assertEqual(c.post('/api/auth/logout/').status_code, 204)
+        self.assertEqual(list(PushSubscription.objects.values_list('endpoint', flat=True)), [self.FCM + 'anon'])
+

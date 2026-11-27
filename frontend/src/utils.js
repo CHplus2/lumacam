@@ -27,7 +27,8 @@ export const ICONS = {
 }
 
 export const CATEGORY_COLORS = ['orange', 'blue', 'violet', 'teal', 'emerald', 'rose']
-export const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue', sells_items: false }
+export const emptyCategory = { name: '', description: '', icon: 'tag', color: 'blue', sells_items: false, subcategories: [] }
+export const MAX_SUBCATEGORIES = 12
 
 export const CONTACT_METHODS = [
   { value: 'none', label: 'No contact', placeholder: '', hint: '' },

@@ -8,7 +8,7 @@ LumaCam is a campus announcement platform for food, marketplace, events, surveys
 - Posts record their `publisher` account; the shown name comes from the account. Only that account can edit, delete, change stock or restore the post (`ownership.IsPublisherOrReadOnly`). Categories record `created_by`; only the creator can delete or restore them (once empty). The original six categories and posts with no owner can only be changed in `/django-admin/`.
 - **Log out** clears this device; **Log out on all devices** also deletes the token on the server.
 - Posts made earlier with a browser edit key are moved into your account the first time you log in on that browser (`POST /api/auth/claim/`).
-- Phone notifications and followed categories stay per device and don't need an account.
+- Notification settings follow the account when logged in (see Phone notifications); logged-out visitors keep device-only settings.
 
 ## Prerequisites
 
@@ -52,7 +52,7 @@ All settings have development defaults. For deployments set these environment va
 
 Deleting a post or category moves it to the **Trash** (bin icon in the header, `/trash`), which has separate tabs for announcements and categories. Anyone can restore items there, and right after a delete an **Undo** banner appears. Restoring a post whose category is also in the Trash restores the category too.
 
-Items are erased for good `TRASH_DAYS` (default 30) after deletion. A category in the Trash waits until its newest deleted post is erased. Vercel has no always-on scheduler, so the clean-up runs when a server instance starts and whenever someone opens the Trash; `python manage.py purge_trash` runs it by hand or from cron. The app deliberately has no "delete forever" button, so a visitor to a shared link cannot erase recoverable items.
+Items are erased for good `TRASH_DAYS` (default 30) after deletion. A category in the Trash waits until its newest deleted post is erased. Vercel has no always-on scheduler, so the clean-up runs when a server instance starts and whenever someone opens the Trash; `python manage.py purge_trash` runs it by hand or from cron. Each account has its own Trash (only what it deleted), with **Restore** and **Delete forever**. A category can be deleted forever once no deleted posts still use it; otherwise it waits for them.
 
 `/django-admin/` can also restore items (Announcements filtered by "In trash", or Categories filtered by "is removed").
 
@@ -64,7 +64,10 @@ Set `DATABASE_URL`. With `DEBUG=false` the server applies pending migrations its
 
 ### Phone notifications (Web Push)
 
-Visitors pick categories and turn on phone notifications at **Notifications** (bell, then *Notification settings*, or `/notifications`). No account is needed: the browser's push subscription is stored with the chosen categories. When someone posts in one of those categories, the server sends an encrypted Web Push message (`announcements/push.py`, using `pywebpush`).
+Visitors pick categories and turn on phone notifications at **Notifications** (bell, then *Notification settings*, or `/notifications`).
+
+- **Logged in:** followed categories, frequency and quiet hours are saved on the account (`NotificationPrefs`, `GET/PUT /api/auth/prefs/`) and are the same on every device. Each device where phone notifications are turned on is linked to the account (`PushSubscription.user`) and uses the account's settings. Logging in adds the device's earlier follows to the account; logging out stops that device's notifications and clears its copy; **Log out on all devices** removes every linked device.
+- **Logged out:** settings are kept on the device only, and the push subscription stores its own categories. When someone posts in one of those categories, the server sends an encrypted Web Push message (`announcements/push.py`, using `pywebpush`).
 
 Anti-spam limits are enforced on the server for each device:
 
@@ -77,6 +80,10 @@ Anti-spam limits are enforced on the server for each device:
 Platforms: Chrome/Edge/Firefox on Android and desktop work directly. On iPhone/iPad (iOS 16.4+), the site must first be added to the Home Screen; the settings page shows the steps.
 
 The VAPID key pair is generated on first use and stored in the database (`PushKeys`), so no setup is needed. To use your own, set `VAPID_PUBLIC_KEY` (base64url) and `VAPID_PRIVATE_KEY` (PEM). Changing keys invalidates existing subscriptions.
+
+### Subcategories
+
+Each category can have up to 12 subcategories (e.g. Food & Drinks: Meals, Snacks, Drinks, Desserts, Pre-orders). The category's creator adds, renames and removes them in the **Create / Edit category** form; the original six start with a set added by migration `0014` and are changed in `/django-admin/` (Categories > inline Subcategories). Each post picks at most one (optional). On a category page, the first dropdown in the filter row filters by subcategory (`?sub=<id>`), and opening a category still shows all its posts straight away. Removing a subcategory keeps its posts, just without that label; moving a post to another category drops its subcategory.
 
 ### Selling categories
 
@@ -128,15 +135,18 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 | `GET /auth/me/`, `POST /auth/logout/`, `/auth/claim/` | need `Authorization: Token <key>` |
 | `GET /categories/` | with live announcement counts and `can_delete` for the creator |
 | `POST /categories/` | `name`, `description`, `icon`, `color`, `sells_items`; live immediately, rate limited |
+| `PATCH /categories/:id/` | creator only; name, description, icon, colour, `sells_items`, `subcategories` (`[{id?, name}]`, synced; slug stays) |
 | `DELETE /categories/:id/` | only when the category has no posts (else 400); moves it to the Trash |
-| `GET /announcements/?category=&search=&date_from=&date_to=&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day. Selling categories: `stock=in` hides out-of-stock posts, `pickup=<name>` filters by pickup place |
+| `GET /announcements/?category=&search=&date_from=&date_to=&sub=<subcategory id>&categories=a,b&since=&ordering=newest\|upcoming\|oldest\|ending&page=` | live and unexpired only. `date_from`/`date_to` (YYYY-MM-DD) keep posts whose event dates overlap the range (undated posts drop out) and default the order to `upcoming`. `categories` takes several slugs; `since` (ISO date-time) returns posts created after it. `ending` sorts by "hide after" date, else the event's last day. Selling categories: `stock=in` hides out-of-stock posts, `pickup=<name>` filters by pickup place |
 | `POST /announcements/` | multipart, needs `publisher_name`; contact is optional (`contact_method=none`); optional `event_start`/`event_end`; in selling categories `availability` (`available`/`limited`/`out`) and `pickup_locations` (list, or a JSON string in multipart, max 5); live immediately, rate limited |
 | `GET /announcements/:id/` | |
 | `PATCH /announcements/:id/` | only the publisher's account (401 when logged out, 403 for others); multipart or JSON; `remove_image=true` drops the image; rate limited |
 | `DELETE /announcements/:id/` | publisher only; moves the post to the Trash; rate limited |
 | `GET /trash/announcements/?ids=1,2&search=`, `GET /trash/categories/` | Trash contents with `removed_at` and `purge_at` (only your own); also erases expired items |
+| `DELETE /trash/announcements/:id/`, `DELETE /trash/categories/:id/` | delete your own item forever (a category only once no deleted posts use it) |
 | `POST /trash/announcements/:id/restore/`, `POST /trash/categories/:id/restore/` | restore your own; a post brings its trashed category back too |
 | `GET /pickup-locations/?category=` | pickup places used by live posts, most used first |
+| `GET`, `PUT /auth/prefs/` | the account's notification settings: `categories` (slugs), `frequency`, `quiet_hours` |
 | `GET /push/key/` | Web Push public key |
 | `POST /push/subscribe/` | `subscription`, `categories`, `frequency` (`every`/`hourly`/`daily`), `quiet_hours`, `utc_offset_minutes`; creates or updates this device |
 | `POST /push/status/`, `/push/unsubscribe/`, `/push/test/` | by `endpoint`; the test ignores the limits and doesn't count toward them |
@@ -164,7 +174,7 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 
 - Accounts are username + password with no email verification or password reset; production should use university single sign-on and add moderation.
 - Rate limits are the only spam control. On serverless hosting the counters are per instance and therefore weak.
-- Notification choices are per browser/device (no accounts). The in-app bell checks every minute while the site is open; phone notifications use Web Push. There are no email alerts, and posts held back by quiet hours or the frequency limit are not delivered later.
+- Logged-out visitors' notification choices are per device. The in-app bell checks every minute while the site is open; phone notifications use Web Push. There are no email alerts, and posts held back by quiet hours or the frequency limit are not delivered later.
 - Images are stored in the database. That is fine for a demo, but a large site should move them to object storage.
 - Seeded demo images are generated gradients. Real photographs come from uploads.
 - Search is case-insensitive substring matching (no ranking).

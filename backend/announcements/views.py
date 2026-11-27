@@ -17,7 +17,7 @@ from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
 from . import ai_fill, ownership, push
-from .models import Announcement, Category, PickupLocation, PushSubscription
+from .models import Announcement, Category, NotificationPrefs, PickupLocation, PushSubscription
 from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
                           TrashedCategorySerializer)
 from .trash import safe_purge
@@ -42,7 +42,7 @@ def not_expired_q(today, prefix=''):
 
 def public_queryset():
     today = timezone.localdate()
-    return (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
+    return (Announcement.objects.select_related('category', 'subcategory').prefetch_related('pickup_locations')
             .filter(status=Announcement.Status.APPROVED, category__is_removed=False)
             .filter(not_expired_q(today)))
 
@@ -97,30 +97,37 @@ class CategoryListView(generics.ListCreateAPIView):
         today = timezone.localdate()
         live = Q(announcements__status=Announcement.Status.APPROVED) & not_expired_q(today, 'announcements__')
         # Meta.ordering is ignored on aggregate queries, so order explicitly.
-        return (Category.objects.filter(is_removed=False)
+        return (Category.objects.filter(is_removed=False).prefetch_related('subcategories')
                 .annotate(announcement_count=Count('announcements', filter=live))
                 .order_by('sort_order', 'name'))
 
 
 
-class CategoryDetailView(generics.RetrieveDestroyAPIView):
-    """The account that created a category can delete it, once it has no posts.
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """The account that created a category can edit it, and delete it once it has no posts.
 
     Delete moves it to the Trash; nothing is moved. The original six have no creator.
     """
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-    queryset = Category.objects.filter(is_removed=False)
+    queryset = Category.objects.filter(is_removed=False).prefetch_related('subcategories')
     throttle_scope = 'modify'
 
     def get_throttles(self):
         return [] if self.request.method in ('GET', 'HEAD', 'OPTIONS') else super().get_throttles()
 
+    def check_creator(self, cat, verb):
+        if not ownership.owns(self.request.user, cat, 'created_by_id'):
+            raise PermissionDenied(f'Only the person who created this category can {verb} it.'
+                                   if cat.created_by_id else f'The original categories can only be {verb}ed by the site admin.')
+
+    def perform_update(self, serializer):
+        self.check_creator(serializer.instance, 'edit')
+        serializer.save()
+
     def destroy(self, request, *args, **kwargs):
         cat = self.get_object()
-        if not ownership.owns(request.user, cat, 'created_by_id'):
-            raise PermissionDenied('Only the person who created this category can delete it.'
-                                   if cat.created_by_id else 'The original categories can only be removed by the site admin.')
+        self.check_creator(cat, 'delete')
         # Count expired posts too: they can still be opened and edited by link.
         posts = cat.announcements.filter(status=Announcement.Status.APPROVED).count()
         if posts:
@@ -151,6 +158,8 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
         qs = public_queryset()
         if p.get('category'):
             qs = qs.filter(category__slug=p['category'])
+        if str(p.get('sub', '')).isdigit():
+            qs = qs.filter(subcategory_id=int(p['sub']))
         if p.get('mine') == '1':  # "My posts"
             qs = qs.filter(publisher=self.request.user) if self.request.user.is_authenticated else qs.none()
         # Several categories at once (used by "followed categories" notifications).
@@ -258,31 +267,76 @@ class PushSubscribeView(APIView):
         if not (20 <= len(p256dh) <= 200 and 8 <= len(auth) <= 100):
             raise ValidationError({'subscription': 'Missing or invalid push keys.'})
         slugs = request.data.get('categories') or []
-        if not isinstance(slugs, list):
-            raise ValidationError({'categories': 'Send a list of category slugs.'})
-        frequency = str(request.data.get('frequency') or PushSubscription.Frequency.HOURLY)
-        if frequency not in PushSubscription.Frequency.values:
-            raise ValidationError({'frequency': f'Choose one of: {", ".join(PushSubscription.Frequency.values)}.'})
+        categories, frequency, quiet = parse_prefs(request.data)
         try:
             offset = int(request.data.get('utc_offset_minutes') or 0)
         except (TypeError, ValueError):
             raise ValidationError({'utc_offset_minutes': 'Send a whole number of minutes.'})
         if not -14 * 60 <= offset <= 14 * 60:
             raise ValidationError({'utc_offset_minutes': 'Out of range.'})
-        categories = Category.objects.filter(slug__in=[str(s) for s in slugs][:50], is_removed=False)
+        user = request.user if request.user.is_authenticated else None
         obj, created = PushSubscription.objects.update_or_create(
             endpoint=endpoint, defaults={
-                'p256dh': p256dh, 'auth': auth, 'frequency': frequency,
-                'quiet_hours': request.data.get('quiet_hours', True) not in (False, 'false', '0', 0),
-                'utc_offset_minutes': offset})
+                'p256dh': p256dh, 'auth': auth, 'frequency': frequency, 'quiet_hours': quiet,
+                'utc_offset_minutes': offset,
+                # Logged in: this device now follows the account's settings.
+                # Logged out: it is a device-only subscription again.
+                'user': user})
         obj.categories.set(categories)
+        if user:
+            save_prefs(user, categories, frequency, quiet)
         return Response(push_settings(obj), status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
+def parse_prefs(data):
+    """(categories queryset, frequency, quiet_hours) from a request body."""
+    slugs = data.get('categories') or []
+    if not isinstance(slugs, list):
+        raise ValidationError({'categories': 'Send a list of category slugs.'})
+    frequency = str(data.get('frequency') or PushSubscription.Frequency.HOURLY)
+    if frequency not in PushSubscription.Frequency.values:
+        raise ValidationError({'frequency': f'Choose one of: {", ".join(PushSubscription.Frequency.values)}.'})
+    quiet = data.get('quiet_hours', True) not in (False, 'false', '0', 0)
+    categories = Category.objects.filter(slug__in=[str(s) for s in slugs][:50], is_removed=False)
+    return categories, frequency, quiet
+
+
+def save_prefs(user, categories, frequency, quiet):
+    prefs, _ = NotificationPrefs.objects.update_or_create(
+        user=user, defaults={'frequency': frequency, 'quiet_hours': quiet})
+    prefs.categories.set(categories)
+    return prefs
+
+
+def prefs_data(prefs):
+    if prefs is None:
+        return {'saved': False, 'categories': [], 'frequency': PushSubscription.Frequency.HOURLY, 'quiet_hours': True}
+    return {'saved': True, 'categories': sorted(prefs.categories.values_list('slug', flat=True)),
+            'frequency': prefs.frequency, 'quiet_hours': prefs.quiet_hours}
+
+
+class NotificationPrefsView(APIView):
+    """The logged-in account's notification settings (shared by all its devices)."""
+    permission_classes = [IsAuthenticated]
+    throttle_scope = 'push'
+
+    def get_throttles(self):
+        return [] if self.request.method == 'GET' else super().get_throttles()
+
+    def get(self, request):
+        return Response(prefs_data(NotificationPrefs.objects.filter(user=request.user).first()))
+
+    def put(self, request):
+        return Response(prefs_data(save_prefs(request.user, *parse_prefs(request.data))))
+
+
 def push_settings(sub):
-    return {'subscribed': True, 'categories': sorted(sub.categories.values_list('slug', flat=True)),
-            'frequency': sub.frequency, 'quiet_hours': sub.quiet_hours,
-            'utc_offset_minutes': sub.utc_offset_minutes}
+    frequency, quiet = sub.effective()
+    categories = (sub.user.notification_prefs.categories if sub.user_id and hasattr(sub.user, 'notification_prefs')
+                  else sub.categories)
+    return {'subscribed': True, 'linked_to_account': bool(sub.user_id),
+            'categories': sorted(categories.values_list('slug', flat=True)),
+            'frequency': frequency, 'quiet_hours': quiet, 'utc_offset_minutes': sub.utc_offset_minutes}
 
 
 class PushStatusView(APIView):
@@ -388,6 +442,34 @@ class TrashRestoreView(APIView):
         ann.save(update_fields=['status', 'removed_at', 'updated_at'])
         return Response({'restored': 'announcement', 'id': ann.id, 'title': ann.title,
                          'restored_category': restored_category})
+
+
+class TrashDeleteForeverView(APIView):
+    """Erase your own deleted post or category now, instead of waiting 30 days."""
+    permission_classes = [IsAuthenticated]
+    throttle_scope = 'modify'
+    kind = None  # 'announcement' or 'category'
+
+    def delete(self, request, pk):
+        if self.kind == 'category':
+            cat = get_object_or_404(Category, pk=pk, is_removed=True)
+            if not ownership.owns(request.user, cat, 'created_by_id'):
+                raise PermissionDenied('Only the person who created this category can delete it.')
+            left = cat.announcements.count()  # only deleted posts can still point at it
+            if left:
+                mine = cat.announcements.filter(publisher=request.user).count()
+                detail = (f'{mine} of your deleted posts still use{"s" if mine == 1 else ""} this category. '
+                          'Delete them forever first.' if mine else
+                          'Other people\'s deleted posts still use this category. '
+                          'It will be erased automatically when they are.')
+                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+            cat.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        ann = get_object_or_404(Announcement, pk=pk, status=Announcement.Status.REMOVED)
+        if not ownership.owns(request.user, ann):
+            raise PermissionDenied(ownership.NOT_OWNER if ann.publisher_id else ownership.LEGACY)
+        ann.delete()  # also erases its stored image
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def serve_media(request, path):

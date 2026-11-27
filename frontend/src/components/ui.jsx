@@ -70,12 +70,12 @@ export function ErrorBox({ message, onRetry }) {
   )
 }
 
-export function CategoryBadge({ category }) {
+export function CategoryBadge({ category, sub }) {
   if (!category) return null
   const Icon = ICONS[category.icon]
   return (
     <span className={`badge tone-${category.color}`}>
-      {Icon && <Icon size={13} />}{category.name}
+      {Icon && <Icon size={13} />}{category.name}{sub && <span className="badge-sub">{' '}· {sub}</span>}
     </span>
   )
 }
@@ -124,7 +124,7 @@ function QuickContact({ a }) {
       <a className={`btn btn-sm contact-${a.contact_method}`} href={contact.href}
         {...(contact.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
         aria-label={`${contact.label}: ${a.title}`}>
-        <Icon size={15} /> {SHORT_LABELS[a.contact_method] || contact.label}
+        <Icon size={15} /> <span className="btn-label">{SHORT_LABELS[a.contact_method] || contact.label}</span>
       </a>
     </div>
   )
@@ -144,8 +144,9 @@ export function AnnouncementCard({ a, to, footer }) {
         </div>
         <div className="ann-body">
           <div className="ann-badges">
-            <CategoryBadge category={a.category_detail} />
+            <CategoryBadge category={a.category_detail} sub={a.subcategory_name} />
             {a.event_start && <EventBadge start={a.event_start} end={a.event_end} />}
+            {a.availability && <StockBadge value={a.availability} className="list-only" />}
           </div>
           <h3 className="ann-title">{a.title}</h3>
           <p className="ann-desc">{a.description}</p>

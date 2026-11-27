@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import api, { parseError } from '../api'
 import { useCategories } from '../hooks'
 import { CategoryCard, ErrorBox, Spinner } from '../components/ui'
@@ -44,6 +44,7 @@ export default function Categories() {
           <h1>Categories</h1>
           <p className="muted">Pick a category to see its announcements.</p>
         </div>
+        <Link to="/categories/new" className="btn btn-primary btn-sm"><Plus size={16} /> New category</Link>
       </div>
       <TrashNotice key={trashed?.id} item={trashed} onClose={closeNotice} onUndone={reload} />
       <ErrorBox message={error || deleteError} onRetry={error ? reload : undefined} />
@@ -52,20 +53,21 @@ export default function Categories() {
           {categories.map((c) => (
             <div key={c.id} className="cat-wrap">
               <CategoryCard category={c} />
-              {c.can_delete && (
-                <button className="cat-delete" onClick={() => remove(c)} disabled={deletingId === c.id}
-                  aria-label={`Delete category ${c.name}`}
-                  title={c.announcement_count ? 'Only empty categories can be deleted' : 'Delete category'}>
-                  <Trash2 size={16} />
-                </button>
+              {c.can_edit && (
+                <div className="cat-actions">
+                  <Link to={`/categories/${c.id}/edit`} className="cat-delete cat-edit"
+                    aria-label={`Edit category ${c.name}`} title="Edit category">
+                    <Pencil size={15} />
+                  </Link>
+                  <button className="cat-delete" onClick={() => remove(c)} disabled={deletingId === c.id}
+                    aria-label={`Delete category ${c.name}`}
+                    title={c.announcement_count ? 'Only empty categories can be deleted' : 'Delete category'}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               )}
             </div>
           ))}
-          <Link to="/categories/new" className="cat-card cat-card-new">
-            <span className="cat-symbol cat-symbol-plus" aria-hidden="true"><Plus size={30} /></span>
-            <span className="cat-name">New category</span>
-            <span className="cat-desc">Add a new kind of announcement</span>
-          </Link>
         </div>
       )}
     </>

@@ -151,8 +151,14 @@ def payload_for(announcement):
 def notify_new_announcement(announcement):
     """Notify every subscription that follows this post's category. Returns how many were delivered."""
     from .models import PushSubscription
+    from django.db.models import Q
     now = timezone.now()
-    candidates = PushSubscription.objects.filter(categories=announcement.category)[:settings.PUSH_MAX_PER_POST]
+    cat = announcement.category
+    # Logged-in devices follow their account's categories; others their own.
+    follows = (Q(user__isnull=True, categories=cat)
+               | Q(user__isnull=False, user__notification_prefs__categories=cat))
+    candidates = (PushSubscription.objects.filter(follows).distinct()
+                  .select_related('user__notification_prefs')[:settings.PUSH_MAX_PER_POST])
     # Respect each device's frequency limit and quiet hours. Skipped posts still
     # show in the in-app bell; they are not sent later.
     subs = [s for s in candidates if s.may_notify(now)]

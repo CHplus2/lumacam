@@ -7,6 +7,7 @@ import api from '../api'
 import { useFollows } from '../follows'
 import { updatePush } from '../push'
 import { clearAuth, useAuth } from '../auth'
+import { forgetOnLogout, loadAccountPrefs, saveAccountPrefs } from '../accountPrefs'
 import { fmtDate } from '../utils'
 import Onboarding, { PageTour } from './Onboarding'
 import { replayGuide } from '../guide'
@@ -126,6 +127,7 @@ function AccountMenu() {
   const go = (to) => { setOpen(false); navigate(to) }
   const logOut = async (everywhere) => {
     setOpen(false)
+    await forgetOnLogout()
     if (everywhere) { try { await api.post('/auth/logout/') } catch { /* already invalid */ } }
     clearAuth()
     navigate('/')
@@ -158,16 +160,30 @@ function AccountMenu() {
 /** Keeps the server's copy of this device's notification settings in step with the app. */
 function PushSync() {
   const { slugs, push, setPush } = useFollows()
+  const { loggedIn, user } = useAuth()
   const key = slugs.join(',')
+  // Logged in: load the account's settings first, so a stale device copy never overwrites them.
+  const [readyFor, setReadyFor] = useState(null)
+  const accountId = loggedIn ? user.id : null
   useEffect(() => {
-    if (!push.on) return undefined
+    if (!accountId) return undefined
+    let alive = true
+    loadAccountPrefs(api).catch(() => {}).finally(() => { if (alive) setReadyFor(accountId) })
+    return () => { alive = false }
+  }, [accountId])
+
+  useEffect(() => {
+    if (accountId && readyFor !== accountId) return undefined
+    if (!accountId && !push.on) return undefined
     const t = setTimeout(() => {
-      updatePush({ slugs: key ? key.split(',') : [], frequency: push.frequency, quietHours: push.quietHours })
-        .then((ok) => { if (!ok) setPush({ on: false }) })
-        .catch(() => { /* offline or rate limited: try again on the next change */ })
+      const save = accountId
+        ? saveAccountPrefs(api)
+        : updatePush({ slugs: key ? key.split(',') : [], frequency: push.frequency, quietHours: push.quietHours })
+          .then((ok) => { if (!ok) setPush({ on: false }) })
+      save.catch(() => { /* offline or rate limited: try again on the next change */ })
     }, 600)
     return () => clearTimeout(t)
-  }, [key, push.on, push.frequency, push.quietHours]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, push.on, push.frequency, push.quietHours, accountId, readyFor]) // eslint-disable-line react-hooks/exhaustive-deps
   return null
 }
 

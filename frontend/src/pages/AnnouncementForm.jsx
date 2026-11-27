@@ -14,7 +14,7 @@ import { MAX_UPLOAD_BYTES, shrinkImage } from '../image'
 const NEW_CATEGORY = '__new__'
 const MAX_PICK_MB = 20 // larger photos are downsized before upload
 const empty = {
-  title: '', category: '', description: '', contact_method: 'none',
+  title: '', category: '', subcategory: '', description: '', contact_method: 'none',
   contact_info: '', external_url: '', expires_at: '', event_start: '', event_end: '',
   availability: 'available', pickup_locations: [],
 }
@@ -52,7 +52,7 @@ export default function AnnouncementForm() {
     api.get(`/announcements/${id}/`)
       .then(({ data }) => {
         setForm({
-          title: data.title, category: String(data.category),
+          title: data.title, category: String(data.category), subcategory: data.subcategory ? String(data.subcategory) : '',
           description: data.description, contact_method: data.contact_method, contact_info: data.contact_info,
           external_url: data.external_url || '', expires_at: data.expires_at || '',
           event_start: data.event_start || '', event_end: data.event_end || '',
@@ -125,6 +125,7 @@ export default function AnnouncementForm() {
     if (input) input.value = ''
   }
 
+  const pickedSubcats = categories.find((c) => String(c.id) === String(form.category))?.subcategories || []
   const selling = form.category === NEW_CATEGORY
     ? Boolean(newCat.sells_items)
     : Boolean(categories.find((c) => String(c.id) === String(form.category))?.sells_items)
@@ -157,7 +158,7 @@ export default function AnnouncementForm() {
       }
       Object.entries({ ...rest, category: categoryId }).forEach(([k, v]) => {
         // On create, skip empty optional fields; on edit, send them so they can be cleared.
-        if (!editing && ['expires_at', 'external_url', 'event_start', 'event_end'].includes(k) && !v) return
+        if (!editing && ['expires_at', 'external_url', 'event_start', 'event_end', 'subcategory'].includes(k) && !v) return
         body.append(k, v)
       })
       if (file) body.append('image', file)
@@ -219,12 +220,21 @@ export default function AnnouncementForm() {
       </Field>
 
       <Field label="Category" htmlFor="category" error={fields.category}>
-        <select id="category" className={ai('category')} value={form.category} onChange={set('category')} required>
+        <select id="category" className={ai('category')} value={form.category} required
+          onChange={(e) => setForm((f) => ({ ...f, category: e.target.value, subcategory: '' }))}>
           <option value="" disabled>Select a category</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           <option value={NEW_CATEGORY}>+ Create a new category</option>
         </select>
       </Field>
+      {pickedSubcats.length > 0 && (
+        <Field label="Subcategory (optional)" htmlFor="subcategory" error={fields.subcategory}>
+          <select id="subcategory" value={form.subcategory} onChange={set('subcategory')}>
+            <option value="">None</option>
+            {pickedSubcats.map((sc) => <option key={sc.id} value={sc.id}>{sc.name}</option>)}
+          </select>
+        </Field>
+      )}
       {form.category === NEW_CATEGORY && <div className="new-cat"><CategoryFields value={newCat} onChange={setNewCat} errors={catErrors} /></div>}
 
       <div className="field">

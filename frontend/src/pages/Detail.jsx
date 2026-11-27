@@ -74,7 +74,7 @@ export default function Detail() {
 
       <div className="detail-main card">
         <div className="ann-badges">
-          <CategoryBadge category={a.category_detail} />
+          <CategoryBadge category={a.category_detail} sub={a.subcategory_name} />
           {a.event_start && <EventBadge start={a.event_start} end={a.event_end} />}
           {a.availability && <StockBadge value={a.availability} />}
         </div>
