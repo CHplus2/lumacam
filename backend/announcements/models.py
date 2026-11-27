@@ -101,6 +101,7 @@ class Announcement(models.Model):
                                   on_delete=models.SET_NULL, related_name='announcements')
     publisher_name = models.CharField(max_length=80, default='')
     image = models.ImageField(upload_to=announcement_image_path, blank=True)
+    image_alt = models.CharField(max_length=200, blank=True, default='')  # alt text; AI-suggested for posters
     contact_method = models.CharField(max_length=10, choices=ContactMethod.choices, default=ContactMethod.NONE)
     contact_info = models.CharField(max_length=254, blank=True)
     external_url = models.URLField(blank=True, help_text='Optional registration / Google Forms link')

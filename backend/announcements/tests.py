@@ -1146,7 +1146,7 @@ class AiAutofillTests(BaseCase):
         from unittest import mock
         from announcements import ai_fill
         with mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'test-key'}):
-            self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': True})
+            self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': True, 'poster': True})
             self.assertEqual(APIClient().post('/api/ai/autofill/', {'text': 'hi'}, format='json').status_code, 401)
             self.assertEqual(self.client.post('/api/ai/autofill/', {'text': '  '}, format='json').status_code, 400)
             with mock.patch.object(ai_fill, 'autofill', return_value={'title': 'Nasi lemak'}) as fake:
@@ -1156,7 +1156,7 @@ class AiAutofillTests(BaseCase):
             with mock.patch.object(ai_fill, 'autofill', return_value=None):
                 self.assertFalse(self.client.post('/api/ai/autofill/', {'text': 'x'}, format='json').data['ok'])
         os.environ.pop('DEEPSEEK_API_KEY', None)
-        self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': False})
+        self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': False, 'poster': False})
         self.assertEqual(self.client.post('/api/ai/autofill/', {'text': 'x'}, format='json').status_code, 503)
 
 
@@ -1600,3 +1600,63 @@ class LostFoundTests(BaseCase):
         self.assertEqual(_clean({'title': 'Umbrella', 'lost_found': 'found', 'lost_found_place': ' Hall B '}, {}),
                          {'title': 'Umbrella', 'lost_found': 'found', 'lost_found_place': 'Hall B'})
         self.assertEqual(_clean({'title': 'Umbrella', 'lost_found': 'stolen'}, {}), {'title': 'Umbrella'})
+
+
+class PosterAutofillTests(BaseCase):
+    """Poster photo to post: same rules as paste-to-post, plus a real image-type check."""
+    URL = '/api/ai/autofill-image/'
+
+    def setUp(self):
+        super().setUp()
+        import os
+        from unittest import mock
+        patcher = mock.patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'test-key'})
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def send(self, reply=None, error=None, upload=None):
+        from unittest import mock
+        from announcements import ai_fill
+        def fake_call(system, user, timeout):
+            if error:
+                raise error
+            assert user[1]['image_url']['url'].startswith('data:image/png;base64,')
+            return reply, {}
+        with mock.patch.object(ai_fill, '_call', side_effect=fake_call) as call:
+            r = self.client.post(self.URL, {'image': upload or image_file()}, format='multipart')
+        return r, call
+
+    def test_good_reply_fills_fields_and_unknown_keys_cleaned(self):
+        r, _ = self.send(reply=json.dumps({'title': 'Robotics Night', 'category': 'events', 'event_start': '2026-12-04',
+                                           'image_alt': ' Poster for Robotics Night ', 'price': 'free', 'hack': '<script>'}))
+        self.assertEqual(r.data, {'ok': True, 'fields': {'title': 'Robotics Night', 'category': 'events',
+                                                         'event_start': '2026-12-04', 'image_alt': 'Poster for Robotics Night'}})
+
+    def test_wrong_file_type_rejected_before_ai(self):
+        fake = SimpleUploadedFile('poster.png', b'%PDF-1.4 not an image', content_type='image/png')
+        r, call = self.send(reply='{}', upload=fake)
+        self.assertEqual(r.status_code, 400)
+        gif = io.BytesIO(); Image.new('RGB', (5, 5)).save(gif, 'GIF')
+        r, call = self.send(reply='{}', upload=SimpleUploadedFile('p.gif', gif.getvalue(), content_type='image/gif'))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(call.call_count, 0)
+
+    def test_timeout_falls_back_to_manual(self):
+        r, call = self.send(error=TimeoutError())
+        self.assertEqual((r.status_code, r.data['ok']), (200, False))
+        self.assertEqual(call.call_count, 2)  # one retry
+
+    def test_hidden_without_key_or_when_switched_off(self):
+        import os
+        from unittest import mock
+        self.assertTrue(APIClient().get('/api/ai/autofill/').data['poster'])
+        with mock.patch.dict(os.environ, {'AI_POSTER_ENABLED': '0'}):
+            self.assertEqual(APIClient().get('/api/ai/autofill/').data, {'enabled': True, 'poster': False})
+        os.environ.pop('DEEPSEEK_API_KEY')
+        self.assertFalse(APIClient().get('/api/ai/autofill/').data['poster'])
+        self.assertEqual(self.client.post(self.URL, {'image': image_file()}, format='multipart').status_code, 503)
+        self.assertEqual(APIClient().post(self.URL, {'image': image_file()}, format='multipart').status_code, 401)
+
+    def test_alt_text_saved_on_post(self):
+        r = self.client.post('/api/announcements/', {**self.payload(), 'image': image_file(), 'image_alt': 'A red poster'},
+                             format='multipart')
+        self.assertEqual(r.data['image_alt'], 'A red poster')

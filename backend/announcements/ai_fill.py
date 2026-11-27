@@ -5,6 +5,7 @@ Everything it returns is treated like untrusted user input: unknown keys are dro
 category must exist, dates must parse, lengths are capped. Any failure returns None, and the
 form falls back to manual entry.
 """
+import base64
 import json
 import logging
 import os
@@ -40,11 +41,19 @@ Write in the same language as the message (English or Malay).
 Categories (slug: name): %s"""
 
 
+OFF = ('0', 'false', 'no')
+
+
 def enabled():
-    return bool(os.environ.get('DEEPSEEK_API_KEY')) and os.environ.get('AI_AUTOFILL_ENABLED', '1') not in ('0', 'false', 'no')
+    return bool(os.environ.get('DEEPSEEK_API_KEY')) and os.environ.get('AI_AUTOFILL_ENABLED', '1') not in OFF
 
 
-def _call(system, user_text, timeout):
+def poster_enabled():
+    """Poster photo to post: the same DeepSeek model reads images (checked 27 Nov 2026)."""
+    return enabled() and os.environ.get('AI_POSTER_ENABLED', '1') not in OFF
+
+
+def _call(system, user_text, timeout):  # user_text may also be a list of content parts (text + image)
     """One DeepSeek request; returns the reply text (may be blank) and the usage dict."""
     body = {
         'model': os.environ.get('DEEPSEEK_MODEL', 'deepseek-flash'),
@@ -94,6 +103,9 @@ def _clean(data, categories):
         out['contact_method'], out['contact_info'] = method, info
     elif method == 'link' and re.fullmatch(r'https?://\S+', info):
         out['contact_method'], out['contact_info'] = method, info
+    alt = data.get('image_alt')
+    if isinstance(alt, str) and alt.strip():
+        out['image_alt'] = alt.strip()[:200]
     if data.get('lost_found') in ('lost', 'found'):
         out['lost_found'] = data['lost_found']
         place = data.get('lost_found_place')
@@ -135,4 +147,27 @@ def autofill(text, categories, today=None):
     logger.info('ai_fill: %.1fs, tokens in=%s out=%s cached=%s, fields=%s', time.monotonic() - started,
                 usage.get('prompt_tokens'), usage.get('completion_tokens'),
                 usage.get('prompt_cache_hit_tokens'), sorted(result) if result else [])
+    return result
+
+
+POSTER_EXTRA = """
+This time you get a photo of the post's poster instead of a message. Read the text on it.
+Also add "image_alt": one plain sentence describing the poster for blind readers, max 200 characters."""
+
+
+def autofill_image(image_bytes, mime, categories, today=None):
+    """Like autofill(), from a poster photo (already shrunk by the app). None when the AI can't help."""
+    if not image_bytes or not poster_enabled():
+        return None
+    system = SYSTEM % ', '.join(f'{slug}: {name}' for slug, name in sorted(categories.items())) + POSTER_EXTRA
+    data_url = f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
+    user = [{'type': 'text', 'text': f"Today is {(today or date.today()).isoformat()}. Here is the poster."},
+            {'type': 'image_url', 'image_url': {'url': data_url}}]
+    started = time.monotonic()
+    reply = ask_json(system, user)
+    if reply is None:
+        return None
+    result, usage = _clean(reply[0], categories), reply[1]
+    logger.info('ai_fill poster: %.1fs, tokens in=%s out=%s, fields=%s', time.monotonic() - started,
+                usage.get('prompt_tokens'), usage.get('completion_tokens'), sorted(result) if result else [])
     return result

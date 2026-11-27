@@ -17,7 +17,7 @@ const empty = {
   title: '', category: '', subcategory: '', description: '', contact_method: 'none',
   contact_info: '', external_url: '', expires_at: '', event_start: '', event_end: '',
   availability: 'available', pickup_locations: [],
-  lost_found: '', lost_found_place: '', lost_found_date: '',
+  lost_found: '', lost_found_place: '', lost_found_date: '', image_alt: '',
 }
 // Lost & found posts are matched with each other (backend lost_found.py).
 const LOST_FOUND = [
@@ -65,7 +65,7 @@ export default function AnnouncementForm() {
           event_start: data.event_start || '', event_end: data.event_end || '',
           availability: data.availability || 'available', pickup_locations: data.pickup_locations || [],
           lost_found: data.lost_found || '', lost_found_place: data.lost_found_place || '',
-          lost_found_date: data.lost_found_date || '',
+          lost_found_date: data.lost_found_date || '', image_alt: data.image_alt || '',
         })
         setExistingImage(data.image_url)
         setCanEdit(Boolean(data.can_edit))
@@ -91,7 +91,7 @@ export default function AnnouncementForm() {
   const ai = (k) => (aiKeys.has(k) ? 'ai-filled' : undefined)
 
   // Apply AI-suggested fields (already validated by the server); returns what was filled, for the note.
-  const applyAi = (f) => {
+  const applyAi = (f, poster) => {
     const patch = {}
     if (f.title) patch.title = f.title
     if (f.description) patch.description = f.description
@@ -103,12 +103,15 @@ export default function AnnouncementForm() {
     if (f.contact_method) { patch.contact_method = f.contact_method; patch.contact_info = f.contact_info }
     if (f.lost_found) patch.lost_found = f.lost_found
     if (f.lost_found_place) patch.lost_found_place = f.lost_found_place
+    if (f.image_alt) patch.image_alt = f.image_alt
     setForm((prev) => ({ ...prev, ...patch }))
-    setAiKeys(new Set(Object.keys(patch)))
+    // The poster becomes the post's image, so it isn't uploaded twice.
+    if (poster) { setFile(poster); setRemoveImage(false); setFields((x) => ({ ...x, image: undefined })) }
+    setAiKeys(new Set([...Object.keys(patch), ...(poster ? ['image'] : [])]))
     const names = { title: 'title', description: 'description', category: 'category', event_start: 'date', event_end: 'date',
       pickup_locations: 'pickup places', contact_method: 'contact', contact_info: 'contact',
-      lost_found: 'lost or found', lost_found_place: 'where' }
-    return [...new Set(Object.keys(patch).map((k) => names[k]))]
+      lost_found: 'lost or found', lost_found_place: 'where', image_alt: 'image description', image: 'image' }
+    return [...new Set([...Object.keys(patch), ...(poster ? ['image'] : [])].map((k) => names[k]))]
   }
   const method = CONTACT_METHODS.find((m) => m.value === form.contact_method)
 
@@ -322,7 +325,7 @@ export default function AnnouncementForm() {
 
       <Field label="Image (optional)" error={fields.image} hint={preparing ? 'Preparing image...' : 'JPEG, PNG or WebP. Large photos are resized automatically.'} htmlFor="image">
         {shownImage ? (
-          <div className="img-preview">
+          <div className={`img-preview ${ai('image') || ''}`}>
             <img src={shownImage} alt="Selected" />
             <button type="button" className="icon-btn" aria-label="Remove image" onClick={clearImage}><X size={16} /></button>
           </div>
@@ -331,6 +334,12 @@ export default function AnnouncementForm() {
         )}
         <input id="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={pickFile} className={shownImage ? '' : 'sr-only'} />
       </Field>
+      {shownImage && (
+        <Field label="Image description (optional)" htmlFor="image_alt" error={fields.image_alt}
+          hint="One sentence for people using screen readers, e.g. &quot;Poster for Robotics Night, 4 Dec, Lecture Hall B&quot;.">
+          <input id="image_alt" className={ai('image_alt')} value={form.image_alt} maxLength={200} onChange={set('image_alt')} />
+        </Field>
+      )}
 
       <div className={form.contact_method === 'none' ? '' : 'grid-2'}>
         <Field label="Contact (optional)" htmlFor="contact_method" error={fields.contact_method}>

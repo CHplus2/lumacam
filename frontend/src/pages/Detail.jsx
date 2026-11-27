@@ -70,7 +70,7 @@ export default function Detail() {
     <article className="detail">
       <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}><ArrowLeft size={16} /> Back</button>
 
-      {a.image_url && <img className="detail-img" src={a.image_url} alt={a.title} />}
+      {a.image_url && <img className="detail-img" src={a.image_url} alt={a.image_alt || a.title} />}
 
       <div className="detail-main card">
         <div className="ann-badges">

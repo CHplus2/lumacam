@@ -7,7 +7,9 @@ from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from rest_framework import generics, status
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework import generics, serializers, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -282,6 +284,41 @@ class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance.status = Announcement.Status.REMOVED
         instance.removed_at = timezone.now()
         instance.save(update_fields=['status', 'removed_at', 'updated_at'])
+
+
+class PosterAutofillView(APIView):
+    """POST multipart {image}: form fields read from an event poster (logged in only, same limit as paste)."""
+    throttle_scope = 'ai'
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        from .serializers import ALLOWED_IMAGE_FORMATS
+        if not ai_fill.poster_enabled():
+            return Response({'ok': False, 'detail': 'Poster reading is switched off right now.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        upload = request.data.get('image')
+        if not upload:
+            raise ValidationError({'image': 'Choose a poster photo first.'})
+        if upload.size > settings.MAX_IMAGE_BYTES:
+            raise ValidationError({'image': f'Image must be {settings.MAX_IMAGE_BYTES // (1024 * 1024)}MB or smaller.'})
+        # Check the real file type (not the name or the browser's claim) before it goes anywhere.
+        try:
+            image = serializers.ImageField().to_internal_value(upload)
+        except DjangoValidationError:
+            image = None
+        fmt = getattr(getattr(image, 'image', None), 'format', None)
+        if fmt not in ALLOWED_IMAGE_FORMATS:
+            raise ValidationError({'image': 'Only JPEG, PNG or WebP images are allowed.'})
+        image.seek(0)
+        categories = dict(Category.objects.filter(is_removed=False, is_approved=True).values_list('slug', 'name'))
+        started = time.monotonic()
+        fields = ai_fill.autofill_image(image.read(), f'image/{fmt.lower()}', categories, today=timezone.localdate())
+        UsageCount.bump('poster_tries')
+        if fields:
+            UsageCount.bump('poster_ok')
+            UsageCount.bump('poster_ms', round((time.monotonic() - started) * 1000))
+            return Response({'ok': True, 'fields': fields})
+        return Response({'ok': False, 'detail': "Couldn't read the poster. Please fill in the form below."})
 
 
 class LostFoundMatchesView(APIView):
@@ -595,7 +632,7 @@ class AutofillView(APIView):
         return super().get_throttles() if self.request.method == 'POST' else []
 
     def get(self, request):
-        return Response({'enabled': ai_fill.enabled()})
+        return Response({'enabled': ai_fill.enabled(), 'poster': ai_fill.poster_enabled()})
 
     def post(self, request):
         if not ai_fill.enabled():
