@@ -2,6 +2,55 @@
 
 LumaCam is a campus announcement platform for food, marketplace, events, surveys, opportunities and general notices. **Anyone can browse without an account.** Posting, editing and creating categories need a quick account (username, name, password), and **only the account that posted something can edit or delete it**. Posts appear as soon as they are submitted.
 
+- **Live demo:** https://lumacam.vercel.app (no login needed to browse; sign up in a few seconds to post)
+- **Source:** https://github.com/CHplus2/lumacam (public; default branch `feat/lumacam-mvp`)
+- **Stack:** Django 5 + Django REST Framework (backend), React + Vite (frontend), SQLite locally / PostgreSQL (Neon) in production, deployed on Vercel.
+
+## Quick start for technical verification
+
+Needs Python 3.10+ and Node.js 18+. No API keys or `.env` file are required; everything has local defaults and uses SQLite.
+
+```bash
+git clone https://github.com/CHplus2/lumacam.git
+cd lumacam
+
+# Terminal 1: backend (http://127.0.0.1:8000)
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python manage.py migrate           # creates the database and the six categories
+python manage.py seed_demo         # sample posts; prints a one-time admin password
+python manage.py test              # 157 automated tests, should end with "OK"
+python manage.py runserver
+
+# Terminal 2: frontend (http://localhost:5173)
+cd frontend
+npm install
+npm run dev
+```
+
+Then open http://localhost:5173 and check:
+
+1. Home shows the **For you** / **Latest** tabs (tap or swipe) and the sample posts.
+2. **Sign up** (username, name, password), then **Create** a post with a photo. It appears straight away.
+3. Open your post and **Edit** it. Log in as a different account: the Edit and Delete buttons are gone and the API returns 403.
+4. **Delete** the post, then restore it from the **Trash** (bin icon).
+5. `/django-admin/` logs in with `admin` and the password printed by `seed_demo`.
+
+The AI features (paste-to-post and poster photo to post) need a `DEEPSEEK_API_KEY`. Without one they are hidden and the rest of the app works normally.
+
+### Project layout
+
+| Path | Contents |
+|---|---|
+| `backend/config/` | Django settings, URLs, auto-migration on start |
+| `backend/accounts/` | sign-up, log-in, token auth, claiming older posts, account deletion |
+| `backend/announcements/` | models, API views, serializers, ownership rules, Trash, notification preferences, Web Push, AI helpers, tests (`tests.py`) |
+| `frontend/src/pages/` | one file per screen (Home, Listing, Detail, AnnouncementForm, CategoryForm, Trash, NotificationSettings, ...) |
+| `frontend/src/components/` | shared UI (cards, filters, grid/list toggle, Lumi onboarding) |
+| `frontend/vercel.json` | production rewrites of `/api` and `/media` to the backend |
+
 ### Accounts and ownership
 
 - **Sign up** at `/register` (username, display name, password) or **log in** at `/login`. The app stores a long-lived token (DRF `TokenAuthentication`) in `localStorage` and sends `Authorization: Token <key>`, so you log in once per device. Header tokens avoid cookie/CSRF issues behind the frontend's `/api` rewrite.
@@ -47,6 +96,13 @@ All settings have development defaults. For deployments set these environment va
 | `PUSH_MAX_PER_POST` | Max devices notified per new post | `500` |
 | `PUSH_THROTTLE_RATE` | Subscribe/test requests per IP | `60/hour` |
 | `AUTO_MIGRATE` | Set `0` to stop production instances applying migrations (and the Trash clean-up) on start | on when `DEBUG=false` |
+| `AUTH_THROTTLE_RATE` | Sign-up and log-in attempts per IP | `30/hour` |
+| `DEEPSEEK_API_KEY` | Optional. Turns on AI paste-to-post and poster photo to post | unset (AI features hidden) |
+| `DEEPSEEK_MODEL` | Model used for the AI features | `deepseek-flash` |
+| `AI_AUTOFILL_ENABLED`, `AI_POSTER_ENABLED` | Set `0` to switch off one AI feature while keeping the key | on |
+| `AI_THROTTLE_RATE` | AI requests per user | `20/hour` |
+| `USAGE_THROTTLE_RATE` | Anonymous usage-count events per IP (`python manage.py usage_counts` prints them) | `120/hour` |
+| `SEED_ADMIN_PASSWORD` | Password `seed_demo` gives the `admin` account | random, printed once |
 
 ### Trash
 
@@ -154,7 +210,7 @@ Reading is public. Writing needs `Authorization: Token <key>` from `/auth/login/
 
 ## Manual test walkthrough
 
-1. Open http://localhost:5173. The dashboard shows six category cards and recent announcements (after `seed_demo`).
+1. Open http://localhost:5173. Home shows a row of category chips, the **For you** / **Latest** tabs with recent announcements (after `seed_demo`), and upcoming events.
 2. Click **Create Announcement**, create an account when asked (a few seconds), fill in the details, add a photo, and submit. Click **View announcement**: it is already on the dashboard.
 3. On the announcement, click **Edit**, change the title or replace the photo, and save.
 4. Click a category card to verify filtering, use the search bar to verify search, and try the sort dropdown.
