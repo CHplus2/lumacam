@@ -32,7 +32,9 @@ Reply with json only, using exactly these keys and leaving out any the message d
  "event_start": "YYYY-MM-DD", "event_end": "YYYY-MM-DD",
  "pickup_locations": ["place on campus"],
  "contact_method": "whatsapp | email | link",
- "contact_info": "phone number with country code, email, or https link"}
+ "contact_info": "phone number with country code, email, or https link",
+ "lost_found": "lost | found, only when the message is about a lost or found item",
+ "lost_found_place": "where it was lost or found, max 80 characters"}
 Rules: never invent prices, dates, places or contact details. Malaysian numbers start with 60.
 Write in the same language as the message (English or Malay).
 Categories (slug: name): %s"""
@@ -92,7 +94,29 @@ def _clean(data, categories):
         out['contact_method'], out['contact_info'] = method, info
     elif method == 'link' and re.fullmatch(r'https?://\S+', info):
         out['contact_method'], out['contact_info'] = method, info
+    if data.get('lost_found') in ('lost', 'found'):
+        out['lost_found'] = data['lost_found']
+        place = data.get('lost_found_place')
+        if isinstance(place, str) and place.strip():
+            out['lost_found_place'] = place.strip()[:80]
     return out or None
+
+
+def ask_json(system, user, attempt=ATTEMPT):
+    """Ask DeepSeek for a JSON object: one try plus one retry, each with a time limit.
+
+    Returns (parsed dict or list, usage) or None on any failure. Callers must still clean the reply.
+    Never logs the text sent.
+    """
+    for n in range(1, TRIES + 1):
+        try:
+            content, usage = _pool.submit(_call, system, user, attempt).result(timeout=attempt)
+            return json.loads(content), usage  # blank reply -> ValueError
+        except FutureTimeout:
+            logger.warning('ai: no answer within %ss (try %s of %s)', attempt, n, TRIES)
+        except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError, OSError) as exc:
+            logger.warning('ai: failed (%s, try %s of %s)', type(exc).__name__, n, TRIES)
+    return None
 
 
 def autofill(text, categories, today=None):
@@ -103,17 +127,10 @@ def autofill(text, categories, today=None):
     system = SYSTEM % ', '.join(f'{slug}: {name}' for slug, name in sorted(categories.items()))
     user = f"Today is {(today or date.today()).isoformat()}.\nMessage:\n{text}"
     started = time.monotonic()
-    for attempt in range(1, TRIES + 1):
-        try:
-            content, usage = _pool.submit(_call, system, user, ATTEMPT).result(timeout=ATTEMPT)
-            result = _clean(json.loads(content), categories)  # blank reply -> ValueError
-            break
-        except FutureTimeout:
-            logger.warning('ai_fill: no answer within %ss (try %s of %s)', ATTEMPT, attempt, TRIES)
-        except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError, OSError) as exc:
-            logger.warning('ai_fill: failed (%s, try %s of %s)', type(exc).__name__, attempt, TRIES)
-    else:
+    reply = ask_json(system, user)
+    if reply is None:
         return None
+    result, usage = _clean(reply[0], categories), reply[1]
     # Numbers only, never the pasted text.
     logger.info('ai_fill: %.1fs, tokens in=%s out=%s cached=%s, fields=%s', time.monotonic() - started,
                 usage.get('prompt_tokens'), usage.get('completion_tokens'),

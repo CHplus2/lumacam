@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import date, timedelta, timezone as dt_timezone
 
 from django.db.models import Case, Count, F, Q, Value, When
@@ -16,8 +17,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticate
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
-from . import ai_fill, ownership, push
-from .models import Announcement, Category, NotificationPrefs, PickupLocation, PushSubscription, UsageCount
+from . import ai_fill, lost_found, ownership, push
+from .models import (Announcement, Category, LostFoundMatch, NotificationPrefs, PickupLocation, PushSubscription,
+                     UsageCount)
 from .serializers import (AnnouncementSerializer, CategorySerializer, TrashedAnnouncementSerializer,
                           TrashedCategorySerializer)
 from .trash import safe_purge
@@ -198,6 +200,16 @@ class AnnouncementListCreateView(generics.ListCreateAPIView):
             push.notify_new_announcement(announcement)
         except Exception:  # notifications must never block posting
             logging.getLogger(__name__).exception('Sending notifications failed.')
+        match_lost_found(announcement)
+
+
+def match_lost_found(announcement):
+    """Run lost & found matching inside the request (Vercel may stop work after the response).
+    It is fast (one short AI call, about 1 s) and can never block saving the post."""
+    try:
+        lost_found.find_matches(announcement)
+    except Exception:
+        logging.getLogger(__name__).exception('Lost & found matching failed.')
 
 
 FOR_YOU_LIMIT = 10
@@ -263,10 +275,47 @@ class AnnouncementDetailView(generics.RetrieveUpdateDestroyAPIView):
         return (Announcement.objects.select_related('category').prefetch_related('pickup_locations')
                 .filter(status=Announcement.Status.APPROVED))
 
+    def perform_update(self, serializer):
+        match_lost_found(serializer.save())
+
     def perform_destroy(self, instance):
         instance.status = Announcement.Status.REMOVED
         instance.removed_at = timezone.now()
         instance.save(update_fields=['status', 'removed_at', 'updated_at'])
+
+
+class LostFoundMatchesView(APIView):
+    """GET: possible matches for one of your lost or found posts (owner only, never contact details)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        post = get_object_or_404(Announcement, pk=pk, publisher=request.user)
+        live = public_queryset().values('pk')
+        if post.lost_found == 'lost':
+            rows = post.found_matches.filter(found__in=live).select_related('found')
+            pairs = [(m, m.found) for m in rows]
+        else:
+            rows = post.lost_matches.filter(lost__in=live).select_related('lost')
+            pairs = [(m, m.lost) for m in rows]
+        return Response([
+            {'id': m.pk, 'reason': m.reason, 'post': {
+                'id': other.pk, 'title': other.title, 'lost_found': other.lost_found,
+                'lost_found_place': other.lost_found_place, 'lost_found_date': other.lost_found_date,
+                'image_url': other.image.url if other.image else None}}
+            for m, other in sorted(pairs, key=lambda p: p[0].created_at, reverse=True) if not m.dismissed])
+
+
+class LostFoundDismissView(APIView):
+    """POST: "Not mine". Either post's owner can hide a match; it stays hidden for both."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        match = get_object_or_404(LostFoundMatch.objects.filter(Q(lost__publisher=request.user) | Q(found__publisher=request.user)), pk=pk)
+        if not match.dismissed:
+            match.dismissed = True
+            match.save(update_fields=['dismissed'])
+            UsageCount.bump('lf_matches_dismissed')
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class PickupLocationListView(APIView):
@@ -555,7 +604,13 @@ class AutofillView(APIView):
         if not text:
             raise ValidationError({'text': 'Paste your message first.'})
         categories = dict(Category.objects.filter(is_removed=False, is_approved=True).values_list('slug', 'name'))
+        started = time.monotonic()
         fields = ai_fill.autofill(text, categories, today=timezone.localdate())
+        # Evidence: tries, successes and total time (average = autofill_ms / autofill_ok).
+        UsageCount.bump('autofill_tries')
+        if fields:
+            UsageCount.bump('autofill_ok')
+            UsageCount.bump('autofill_ms', round((time.monotonic() - started) * 1000))
         if not fields:
             return Response({'ok': False, 'detail': "Couldn't fill it in automatically. Please fill in the form below."})
         return Response({'ok': True, 'fields': fields})

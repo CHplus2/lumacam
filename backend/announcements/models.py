@@ -118,6 +118,12 @@ class Announcement(models.Model):
     availability = models.CharField(max_length=10, choices=Availability.choices, blank=True, default='')
     stock_updated_at = models.DateTimeField(null=True, blank=True)
     pickup_locations = models.ManyToManyField(PickupLocation, blank=True, related_name='announcements')
+    # Lost & found: matched against the opposite kind (lost_found.py). Its own date field, because
+    # a past event_start would make the post count as expired and show as an event.
+    lost_found = models.CharField(max_length=5, blank=True, default='', db_index=True,
+                                  choices=[('', 'Not lost or found'), ('lost', 'Lost'), ('found', 'Found')])
+    lost_found_place = models.CharField(max_length=80, blank=True, default='')
+    lost_found_date = models.DateField(null=True, blank=True)
     # Posts made before accounts used a browser edit key; its SHA-256 lets the poster
     # claim the post into their account (accounts/views.py). Cleared once claimed.
     edit_token_hash = models.CharField(max_length=64, blank=True, default='', editable=False)
@@ -258,3 +264,15 @@ class UsageCount(models.Model):
         from django.utils import timezone
         row, _ = cls.objects.get_or_create(name=name, day=timezone.localdate())
         cls.objects.filter(pk=row.pk).update(count=F('count') + by)  # atomic across instances
+
+
+class LostFoundMatch(models.Model):
+    """A possible match between a lost post and a found post. Owners see it; "Not mine" dismisses it."""
+    lost = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name='found_matches')
+    found = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name='lost_matches')
+    reason = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    dismissed = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['lost', 'found'], name='one_match_per_pair')]
